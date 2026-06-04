@@ -8,7 +8,7 @@ import useAuthStore from "../store/authStore";
 import toast from "react-hot-toast";
 import { formatDateTime } from "../utils/formatters";
 
-function ZohoIntegrationCard() {
+function ZohoIntegrationCard({ isAdmin }) {
   const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
 
@@ -105,46 +105,52 @@ function ZohoIntegrationCard() {
       )}
 
       <div className="flex gap-2 flex-wrap">
-        {connected ? (
-          <>
+        {isAdmin ? (
+          connected ? (
+            <>
+              <button
+                onClick={() => syncMutation.mutate()}
+                disabled={syncMutation.isPending}
+                className="btn-secondary flex items-center gap-1.5 text-sm"
+              >
+                {syncMutation.isPending ? (
+                  <Loader2 size={14} className="animate-spin" />
+                ) : (
+                  <RefreshCw size={14} />
+                )}
+                Sync Now
+              </button>
+              <button
+                onClick={() => disconnectMutation.mutate()}
+                disabled={disconnectMutation.isPending}
+                className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg border border-red-200 text-red-600 hover:bg-red-50 transition-colors"
+              >
+                {disconnectMutation.isPending ? (
+                  <Loader2 size={14} className="animate-spin" />
+                ) : (
+                  <Unlink size={14} />
+                )}
+                Disconnect
+              </button>
+            </>
+          ) : (
             <button
-              onClick={() => syncMutation.mutate()}
-              disabled={syncMutation.isPending}
-              className="btn-secondary flex items-center gap-1.5 text-sm"
+              onClick={() => connectMutation.mutate()}
+              disabled={connectMutation.isPending}
+              className="btn-primary flex items-center gap-1.5 text-sm"
             >
-              {syncMutation.isPending ? (
+              {connectMutation.isPending ? (
                 <Loader2 size={14} className="animate-spin" />
               ) : (
-                <RefreshCw size={14} />
+                <Link2 size={14} />
               )}
-              Sync Now
+              Connect Zoho CRM
             </button>
-            <button
-              onClick={() => disconnectMutation.mutate()}
-              disabled={disconnectMutation.isPending}
-              className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg border border-red-200 text-red-600 hover:bg-red-50 transition-colors"
-            >
-              {disconnectMutation.isPending ? (
-                <Loader2 size={14} className="animate-spin" />
-              ) : (
-                <Unlink size={14} />
-              )}
-              Disconnect
-            </button>
-          </>
+          )
         ) : (
-          <button
-            onClick={() => connectMutation.mutate()}
-            disabled={connectMutation.isPending}
-            className="btn-primary flex items-center gap-1.5 text-sm"
-          >
-            {connectMutation.isPending ? (
-              <Loader2 size={14} className="animate-spin" />
-            ) : (
-              <Link2 size={14} />
-            )}
-            Connect Zoho CRM
-          </button>
+          !connected && (
+            <p className="text-xs text-slate-400 italic">Contact your admin to connect Zoho CRM.</p>
+          )
         )}
       </div>
 
@@ -217,7 +223,7 @@ export default function Settings() {
 
       <div>
         <h2 className="font-semibold text-slate-800 mb-3">Integrations</h2>
-        <ZohoIntegrationCard />
+        <ZohoIntegrationCard isAdmin={user?.role === "admin"} />
       </div>
     </div>
   );

@@ -45,18 +45,18 @@ def sync_zoho_for_user(self, user_id: int):
 
 
 @shared_task(name="integrations.push_conversation_to_zoho", bind=True, max_retries=2)
-def push_conversation_to_zoho(self, conversation_id: str, user_id: int):
-    """Push an analyzed conversation's summary as a Zoho CRM note."""
+def push_conversation_to_zoho(self, conversation_id: str, user_id: int = None):
+    """Push an analyzed conversation's summary as a Zoho CRM note using the org credential."""
     from apps.conversations.models import Conversation
     from .models import ZohoCredential
     from .services.zoho_sync import push_conversation_note
 
     try:
-        credential = ZohoCredential.objects.get(user_id=user_id)
+        credential = ZohoCredential.objects.filter(user__role="admin").first()
+        if not credential:
+            return  # org not connected to Zoho
         conversation = Conversation.objects.select_related("customer").get(id=conversation_id)
         push_conversation_note(conversation, credential)
-    except ZohoCredential.DoesNotExist:
-        pass  # user not connected to Zoho
     except Exception as exc:
         logger.error(f"Zoho note push failed for conversation {conversation_id}: {exc}")
         raise self.retry(exc=exc, countdown=30)

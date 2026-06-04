@@ -20,23 +20,34 @@ def _redirect_uri(request):
     return ZOHO_REDIRECT_URI
 
 
+def _get_org_credential():
+    """Return the single org-wide Zoho credential (stored on an admin user)."""
+    return ZohoCredential.objects.select_related("user").filter(
+        user__role="admin"
+    ).first()
+
+
 @api_view(["GET"])
 @permission_classes([permissions.IsAuthenticated])
 def zoho_status(request):
-    try:
-        cred = ZohoCredential.objects.get(user=request.user)
+    cred = _get_org_credential()
+    if cred:
         return Response({
             "connected": True,
             "zoho_user_email": cred.zoho_user_email,
             "last_sync_at": cred.last_sync_at,
         })
-    except ZohoCredential.DoesNotExist:
-        return Response({"connected": False})
+    return Response({"connected": False})
 
 
 @api_view(["GET"])
 @permission_classes([permissions.IsAuthenticated])
 def zoho_connect(request):
+    if request.user.role != "admin":
+        return Response(
+            {"error": "Only admins can connect Zoho CRM."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
     if not getattr(settings, "ZOHO_CLIENT_ID", None):
         return Response(
             {"error": "Zoho integration is not configured. Set ZOHO_CLIENT_ID and ZOHO_CLIENT_SECRET."},
@@ -65,7 +76,6 @@ def zoho_callback(request):
     try:
         token_data = zc.exchange_code(code, redirect_uri=ZOHO_REDIRECT_URI)
 
-        # Resolve user from state (user id)
         from django.contrib.auth import get_user_model
         User = get_user_model()
         try:
@@ -73,7 +83,6 @@ def zoho_callback(request):
         except (User.DoesNotExist, ValueError):
             return HttpResponseRedirect(f"{FRONTEND_URL}/settings?zoho=error&reason=invalid_state")
 
-        # Fetch Zoho user info for display
         zoho_user_email = ""
         zoho_org_id = ""
         try:
@@ -94,7 +103,6 @@ def zoho_callback(request):
             },
         )
 
-        # Kick off initial sync
         from .tasks import sync_zoho_for_user
         sync_zoho_for_user.delay(str(user.id))
 
@@ -108,18 +116,27 @@ def zoho_callback(request):
 @api_view(["DELETE"])
 @permission_classes([permissions.IsAuthenticated])
 def zoho_disconnect(request):
-    ZohoCredential.objects.filter(user=request.user).delete()
+    if request.user.role != "admin":
+        return Response(
+            {"error": "Only admins can disconnect Zoho CRM."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+    ZohoCredential.objects.filter(user__role="admin").delete()
     return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 @api_view(["POST"])
 @permission_classes([permissions.IsAuthenticated])
 def zoho_sync_now(request):
-    try:
-        ZohoCredential.objects.get(user=request.user)
-    except ZohoCredential.DoesNotExist:
+    if request.user.role != "admin":
+        return Response(
+            {"error": "Only admins can trigger Zoho sync."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+    cred = _get_org_credential()
+    if not cred:
         return Response({"error": "Not connected to Zoho"}, status=status.HTTP_400_BAD_REQUEST)
 
     from .tasks import sync_zoho_for_user
-    sync_zoho_for_user.delay(str(request.user.id))
+    sync_zoho_for_user.delay(str(cred.user_id))
     return Response({"status": "sync started"})
