@@ -7,6 +7,7 @@ const STEPS = [
   { key: "analyzing", label: "Analyzing conversation..." },
   { key: "summarizing", label: "Generating AI summary..." },
   { key: "indexing", label: "Building search index..." },
+  { key: "preparing", label: "Preparing results..." },
 ];
 
 export default function AIProcessingStatus({ conversationId, hasAudio }) {
@@ -22,7 +23,9 @@ export default function AIProcessingStatus({ conversationId, hasAudio }) {
         if (cancelled) return;
         setStatus(data.ai_status);
         if (data.ai_status === "processing") {
-          setCurrentStep((s) => Math.min(s + 1, STEPS.length - 1));
+          // stop at second-to-last so the final "Preparing results…" step
+          // stays spinning until the parent unmounts this component
+          setCurrentStep((s) => Math.min(s + 1, STEPS.length - 2));
         }
       } catch {
         // parent query will handle refetching
