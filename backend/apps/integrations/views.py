@@ -30,24 +30,20 @@ def _get_org_credential():
 @api_view(["GET"])
 @permission_classes([permissions.IsAuthenticated])
 def zoho_status(request):
-    cred = _get_org_credential()
-    if cred:
+    try:
+        cred = ZohoCredential.objects.get(user=request.user)
         return Response({
             "connected": True,
             "zoho_user_email": cred.zoho_user_email,
             "last_sync_at": cred.last_sync_at,
         })
-    return Response({"connected": False})
+    except ZohoCredential.DoesNotExist:
+        return Response({"connected": False})
 
 
 @api_view(["GET"])
 @permission_classes([permissions.IsAuthenticated])
 def zoho_connect(request):
-    if request.user.role != "admin":
-        return Response(
-            {"error": "Only admins can connect Zoho CRM."},
-            status=status.HTTP_403_FORBIDDEN,
-        )
     if not getattr(settings, "ZOHO_CLIENT_ID", None):
         return Response(
             {"error": "Zoho integration is not configured. Set ZOHO_CLIENT_ID and ZOHO_CLIENT_SECRET."},
@@ -116,27 +112,18 @@ def zoho_callback(request):
 @api_view(["DELETE"])
 @permission_classes([permissions.IsAuthenticated])
 def zoho_disconnect(request):
-    if request.user.role != "admin":
-        return Response(
-            {"error": "Only admins can disconnect Zoho CRM."},
-            status=status.HTTP_403_FORBIDDEN,
-        )
-    ZohoCredential.objects.filter(user__role="admin").delete()
+    ZohoCredential.objects.filter(user=request.user).delete()
     return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 @api_view(["POST"])
 @permission_classes([permissions.IsAuthenticated])
 def zoho_sync_now(request):
-    if request.user.role != "admin":
-        return Response(
-            {"error": "Only admins can trigger Zoho sync."},
-            status=status.HTTP_403_FORBIDDEN,
-        )
-    cred = _get_org_credential()
-    if not cred:
+    try:
+        ZohoCredential.objects.get(user=request.user)
+    except ZohoCredential.DoesNotExist:
         return Response({"error": "Not connected to Zoho"}, status=status.HTTP_400_BAD_REQUEST)
 
     from .tasks import sync_zoho_for_user
-    sync_zoho_for_user.delay(str(cred.user_id))
+    sync_zoho_for_user.delay(str(request.user.id))
     return Response({"status": "sync started"})

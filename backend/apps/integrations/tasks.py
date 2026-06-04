@@ -46,16 +46,26 @@ def sync_zoho_for_user(self, user_id: int):
 
 @shared_task(name="integrations.push_conversation_to_zoho", bind=True, max_retries=2)
 def push_conversation_to_zoho(self, conversation_id: str, user_id: int = None):
-    """Push an analyzed conversation's summary as a Zoho CRM note using the org credential."""
+    """Push an analyzed conversation's summary as a Zoho CRM note.
+
+    Uses the rep's own token if connected, falls back to any admin token.
+    """
     from apps.conversations.models import Conversation
     from .models import ZohoCredential
     from .services.zoho_sync import push_conversation_note
 
     try:
-        credential = ZohoCredential.objects.filter(user__role="admin").first()
+        conversation = Conversation.objects.select_related("customer", "created_by").get(id=conversation_id)
+
+        # Prefer the rep's own credential, fall back to admin
+        credential = None
+        if conversation.created_by_id:
+            credential = ZohoCredential.objects.filter(user_id=conversation.created_by_id).first()
         if not credential:
-            return  # org not connected to Zoho
-        conversation = Conversation.objects.select_related("customer").get(id=conversation_id)
+            credential = ZohoCredential.objects.filter(user__role="admin").first()
+        if not credential:
+            return  # nobody connected to Zoho
+
         push_conversation_note(conversation, credential)
     except Exception as exc:
         logger.error(f"Zoho note push failed for conversation {conversation_id}: {exc}")
