@@ -14,15 +14,15 @@ LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,
     "formatters": {
-        "json": {
-            "()": "structlog.stdlib.ProcessorFormatter",
-            "processor": "structlog.dev.ConsoleRenderer",
+        "simple": {
+            "format": "{levelname} {asctime} {module} {message}",
+            "style": "{",
         }
     },
     "handlers": {
         "console": {
             "class": "logging.StreamHandler",
-            "formatter": "json",
+            "formatter": "simple",
         }
     },
     "root": {"handlers": ["console"], "level": "WARNING"},
