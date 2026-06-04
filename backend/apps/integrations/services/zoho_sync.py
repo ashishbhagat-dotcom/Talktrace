@@ -105,9 +105,13 @@ def push_conversation_note(conversation, credential) -> bool:
         module_map = {"contact": "Contacts", "lead": "Leads", "account": "Accounts"}
         module = module_map.get(customer.type, "Contacts")
 
-        title = f"Talktrace: {conversation.get_conversation_type_display()} — {conversation.interaction_date.strftime('%b %d, %Y')}"
+        rep_name = conversation.created_by.name if conversation.created_by else "Unknown Rep"
+        rep_email = conversation.created_by.email if conversation.created_by else ""
 
-        lines = [f"**Summary:** {conversation.ai_summary}"]
+        title = f"Talktrace: {conversation.get_conversation_type_display()} by {rep_name} — {conversation.interaction_date.strftime('%b %d, %Y')}"
+
+        lines = [f"Rep: {rep_name} ({rep_email})" if rep_email else f"Rep: {rep_name}"]
+        lines.append(f"\n**Summary:** {conversation.ai_summary}")
         if conversation.customer_requirements:
             lines.append(f"\n**Customer Requirements:** {conversation.customer_requirements}")
         if conversation.pain_points:
