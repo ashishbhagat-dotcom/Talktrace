@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { ChevronDown, ChevronRight, CheckCircle, Clock, AlertCircle } from "lucide-react";
@@ -37,14 +37,12 @@ export default function ConversationView() {
   const { id } = useParams();
   const queryClient = useQueryClient();
 
-  const { data: conversation, isLoading, refetch } = useQuery({
+  const { data: conversation, isLoading } = useQuery({
     queryKey: ["conversation", id],
     queryFn: () => getConversation(id).then((r) => r.data),
+    refetchInterval: (query) =>
+      query.state.data?.ai_status !== "completed" ? 3000 : false,
   });
-
-  const handleAIComplete = useCallback(() => {
-    refetch();
-  }, [refetch]);
 
   const updateStatus = useMutation({
     mutationFn: ({ itemId, status }) => updateActionItem(itemId, { status }),
@@ -94,7 +92,6 @@ export default function ConversationView() {
         <AIProcessingStatus
           conversationId={id}
           hasAudio={conversation.attachments?.length > 0}
-          onComplete={handleAIComplete}
         />
       )}
 

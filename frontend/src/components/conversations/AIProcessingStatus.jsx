@@ -9,37 +9,33 @@ const STEPS = [
   { key: "indexing", label: "Building search index..." },
 ];
 
-export default function AIProcessingStatus({ conversationId, hasAudio, onComplete }) {
+export default function AIProcessingStatus({ conversationId, hasAudio }) {
   const [status, setStatus] = useState("pending");
   const [currentStep, setCurrentStep] = useState(0);
 
   useEffect(() => {
-    if (status === "completed" || status === "failed") return;
+    let cancelled = false;
 
-    const interval = setInterval(async () => {
+    const poll = async () => {
       try {
         const { data } = await getConversationStatus(conversationId);
+        if (cancelled) return;
         setStatus(data.ai_status);
-
         if (data.ai_status === "processing") {
           setCurrentStep((s) => Math.min(s + 1, STEPS.length - 1));
         }
-        if (data.ai_status === "completed") {
-          clearInterval(interval);
-          onComplete?.();
-        }
-        if (data.ai_status === "failed") {
-          clearInterval(interval);
-        }
       } catch {
-        clearInterval(interval);
+        // parent query will handle refetching
       }
-    }, 2000);
+    };
 
-    return () => clearInterval(interval);
-  }, [conversationId, status, onComplete]);
-
-  if (status === "completed") return null;
+    poll();
+    const interval = setInterval(poll, 2000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [conversationId]);
 
   const steps = hasAudio ? STEPS : STEPS.slice(1);
 
