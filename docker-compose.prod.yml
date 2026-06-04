@@ -118,6 +118,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      ollama:
+        condition: service_started
     deploy:
       resources:
         limits:
@@ -141,6 +143,13 @@ services:
       redis:
         condition: service_healthy
 
+  # ─── Ollama (local LLM inference) ──────────────────────────────────────────
+  ollama:
+    image: ollama/ollama:latest
+    restart: unless-stopped
+    volumes:
+      - ollama_data:/root/.ollama
+
   # ─── React Frontend served via Nginx on port 80 ─────────────────────────────
   frontend:
     build:
@@ -158,3 +167,4 @@ volumes:
   es_data:
   minio_data:
   static_files:
+  ollama_data:

@@ -136,7 +136,19 @@ docker compose -f docker-compose.prod.yml exec django python manage.py collectst
 
 ---
 
-## 7. Create Admin User
+## 7. Pull Ollama Model
+
+The Ollama container starts automatically but needs the LLM model downloaded (~2GB):
+
+```bash
+docker compose -f docker-compose.prod.yml exec ollama ollama pull llama3.2:3b
+```
+
+> This takes 2–5 minutes depending on server bandwidth. You only need to do this once — the model is persisted in the `ollama_data` volume.
+
+---
+
+## 8. Create Admin User
 
 ```bash
 docker compose -f docker-compose.prod.yml exec django python manage.py shell -c "
@@ -149,7 +161,7 @@ print('Admin created')
 
 ---
 
-## 8. Verify Deployment
+## 9. Verify Deployment
 
 ```bash
 docker ps --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}'
@@ -161,7 +173,7 @@ Open `http://<SERVER_IP>` in your browser.
 
 ---
 
-## 9. Zoho CRM Setup
+## 10. Zoho CRM Setup
 
 1. Go to [api-console.zoho.com](https://api-console.zoho.com)
 2. Open your client → **Edit**
