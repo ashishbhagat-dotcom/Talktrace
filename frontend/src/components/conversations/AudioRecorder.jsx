@@ -15,6 +15,14 @@ export default function AudioRecorder({ onRecordingComplete }) {
 
   const startRecording = async () => {
     setError(null);
+
+    if (!window.isSecureContext || !navigator.mediaDevices) {
+      setError(
+        "Microphone access requires a secure connection (HTTPS). Please open the app using https:// instead of http://."
+      );
+      return;
+    }
+
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const mediaRecorder = new MediaRecorder(stream, {
