@@ -62,6 +62,7 @@ class ConversationDetailSerializer(serializers.ModelSerializer):
             "ai_status", "created_by", "interaction_date",
             "created_at", "updated_at",
             "action_items", "attachments",
+            "gmail_thread_id",
         ]
         read_only_fields = [
             "id", "ai_summary", "customer_requirements", "pain_points",

@@ -75,6 +75,8 @@ class Conversation(models.Model):
     # Soft delete
     is_deleted = models.BooleanField(default=False)
 
+    gmail_thread_id = models.CharField(max_length=255, blank=True, null=True)
+
     class Meta:
         db_table = "conversations_conversation"
         ordering = ["-interaction_date"]

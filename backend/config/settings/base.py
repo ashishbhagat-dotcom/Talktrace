@@ -254,3 +254,8 @@ ZOHO_ACCOUNTS_URL = os.environ.get("ZOHO_ACCOUNTS_URL", "https://accounts.zoho.c
 ZOHO_API_URL = os.environ.get("ZOHO_API_URL", "https://www.zohoapis.com")
 ZOHO_REDIRECT_URI = os.environ.get("ZOHO_REDIRECT_URI", "http://localhost:8001/api/integrations/zoho/callback/")
 FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:5173")
+
+# ─── Gmail Integration ─────────────────────────────────────────────────────────
+GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", "")
+GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET", "")
+GMAIL_REDIRECT_URI = os.environ.get("GMAIL_REDIRECT_URI", "http://localhost:8001/api/integrations/gmail/callback/")

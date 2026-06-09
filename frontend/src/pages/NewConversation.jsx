@@ -1,8 +1,10 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-import { Loader2, Phone, Users, Video, MessageCircle, Mail, MoreHorizontal } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { Loader2, Phone, Users, Video, MessageCircle, Mail, MoreHorizontal, Search, ChevronLeft } from "lucide-react";
 import toast from "react-hot-toast";
 import { createConversation, uploadVoice } from "../api/conversations";
+import { getGmailStatus, searchGmailThreads, getGmailThread, importGmailThread } from "../api/integrations";
 import CustomerSearch from "../components/customers/CustomerSearch";
 import AudioRecorder from "../components/conversations/AudioRecorder";
 
@@ -29,17 +31,85 @@ export default function NewConversation() {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [loading, setLoading] = useState(false);
 
+  // Gmail state
+  const [threadSearch, setThreadSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [selectedThread, setSelectedThread] = useState(null);
+  const debounceTimer = useRef(null);
+
+  const { data: gmailStatusRes } = useQuery({
+    queryKey: ["gmail-status"],
+    queryFn: () => getGmailStatus().then((r) => r.data),
+    retry: false,
+  });
+  const gmailConnected = gmailStatusRes?.connected ?? false;
+
+  // Debounce the search input
+  useEffect(() => {
+    if (debounceTimer.current) clearTimeout(debounceTimer.current);
+    debounceTimer.current = setTimeout(() => {
+      setDebouncedSearch(threadSearch);
+    }, 500);
+    return () => clearTimeout(debounceTimer.current);
+  }, [threadSearch]);
+
+  // When convType changes to/from "email", adjust the active tab
+  useEffect(() => {
+    if (convType === "email") {
+      if (gmailConnected) {
+        setActiveTab("gmail");
+      } else {
+        setActiveTab("text");
+      }
+    } else {
+      if (activeTab === "gmail") setActiveTab("text");
+    }
+  }, [convType]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Pre-fill search with customer email when gmail tab is active
+  useEffect(() => {
+    if (activeTab === "gmail" && customer?.email && !threadSearch) {
+      setThreadSearch(customer.email);
+    }
+  }, [activeTab, customer]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const searchParams = {};
+  if (debouncedSearch) searchParams.q = debouncedSearch;
+  if (customer?.email) searchParams.customer_email = customer.email;
+
+  const { data: threadsRes, isFetching: threadsFetching } = useQuery({
+    queryKey: ["gmail-threads", debouncedSearch, customer?.email],
+    queryFn: () => searchGmailThreads(searchParams).then((r) => r.data),
+    enabled: gmailConnected && activeTab === "gmail",
+    retry: false,
+  });
+  const threads = threadsRes?.threads ?? [];
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!customer) { toast.error("Please select a customer"); return; }
-    if (activeTab === "text" && !rawText.trim()) { toast.error("Please enter conversation notes"); return; }
-    if (activeTab === "voice" && !audioBlob) { toast.error("Please record audio first"); return; }
+
+    if (activeTab === "gmail") {
+      if (!selectedThread) { toast.error("Please select a Gmail thread"); return; }
+    } else if (activeTab === "text" && !rawText.trim()) {
+      toast.error("Please enter conversation notes"); return;
+    } else if (activeTab === "voice" && !audioBlob) {
+      toast.error("Please record audio first"); return;
+    }
 
     setLoading(true);
     try {
       let conversation;
 
-      if (activeTab === "voice") {
+      if (activeTab === "gmail") {
+        const { data } = await importGmailThread({
+          thread_id: selectedThread.id,
+          customer_id: customer.id,
+          conversation_type: "email",
+          interaction_date: new Date(interactionDate).toISOString(),
+        });
+        conversation = data;
+      } else if (activeTab === "voice") {
         const formData = new FormData();
         const ext = audioMime?.includes("webm") ? "webm" : "ogg";
         formData.append("audio", audioBlob, `recording.${ext}`);
@@ -69,6 +139,13 @@ export default function NewConversation() {
       setLoading(false);
     }
   };
+
+  // Determine which tabs to show in Step 3
+  const tabs = convType === "email" && gmailConnected
+    ? ["text", "voice", "gmail"]
+    : ["text", "voice"];
+
+  const tabLabels = { text: "Text Notes", voice: "Voice Recording", gmail: "Gmail Thread" };
 
   return (
     <div className="max-w-2xl mx-auto">
@@ -110,6 +187,11 @@ export default function NewConversation() {
               </button>
             ))}
           </div>
+          {convType === "email" && !gmailConnected && (
+            <p className="text-xs text-slate-400 mb-3">
+              Connect Gmail in Settings to import threads directly.
+            </p>
+          )}
           <div>
             <label className="label">When did this happen?</label>
             <input
@@ -126,7 +208,7 @@ export default function NewConversation() {
           <h2 className="font-semibold text-slate-800 mb-4">3. Conversation Content</h2>
 
           <div className="flex border-b border-slate-200 mb-4">
-            {["text", "voice"].map((tab) => (
+            {tabs.map((tab) => (
               <button
                 key={tab}
                 type="button"
@@ -137,12 +219,12 @@ export default function NewConversation() {
                     : "border-transparent text-slate-500 hover:text-slate-700"
                 }`}
               >
-                {tab} {tab === "voice" ? "Recording" : "Notes"}
+                {tabLabels[tab]}
               </button>
             ))}
           </div>
 
-          {activeTab === "text" ? (
+          {activeTab === "text" && (
             <textarea
               className="input resize-none"
               rows={8}
@@ -150,7 +232,9 @@ export default function NewConversation() {
               value={rawText}
               onChange={(e) => setRawText(e.target.value)}
             />
-          ) : (
+          )}
+
+          {activeTab === "voice" && (
             <div>
               <AudioRecorder
                 onRecordingComplete={(blob, mime) => {
@@ -172,6 +256,100 @@ export default function NewConversation() {
                     />
                   </div>
                   <p className="text-xs text-slate-500 mt-1">Uploading... {uploadProgress}%</p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {activeTab === "gmail" && (
+            <div>
+              {selectedThread ? (
+                <div>
+                  <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 mb-3">
+                    <div className="flex items-start justify-between gap-3 mb-2">
+                      <p className="font-medium text-slate-800 text-sm leading-snug">
+                        {selectedThread.subject || "(No subject)"}
+                      </p>
+                      {selectedThread.message_count && (
+                        <span className="shrink-0 text-xs text-slate-500 bg-slate-200 px-2 py-0.5 rounded-full">
+                          {selectedThread.message_count} messages
+                        </span>
+                      )}
+                    </div>
+                    {selectedThread.raw_text && (
+                      <p className="text-xs text-slate-500 leading-relaxed line-clamp-4">
+                        {selectedThread.raw_text.slice(0, 300)}
+                        {selectedThread.raw_text.length > 300 && "…"}
+                      </p>
+                    )}
+                    {selectedThread.date && (
+                      <p className="text-xs text-slate-400 mt-2">{selectedThread.date}</p>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedThread(null)}
+                    className="btn-secondary flex items-center gap-1.5 text-sm"
+                  >
+                    <ChevronLeft size={14} />
+                    Change thread
+                  </button>
+                </div>
+              ) : (
+                <div>
+                  <div className="relative mb-3">
+                    <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                    <input
+                      type="text"
+                      className="input pl-9"
+                      placeholder="Search threads by subject or keyword…"
+                      value={threadSearch}
+                      onChange={(e) => setThreadSearch(e.target.value)}
+                    />
+                  </div>
+
+                  {threadsFetching && (
+                    <div className="flex items-center justify-center py-8 text-slate-400">
+                      <Loader2 size={18} className="animate-spin mr-2" />
+                      <span className="text-sm">Searching…</span>
+                    </div>
+                  )}
+
+                  {!threadsFetching && threads.length === 0 && debouncedSearch && (
+                    <p className="text-sm text-slate-400 text-center py-6">No threads found.</p>
+                  )}
+
+                  {!threadsFetching && threads.length === 0 && !debouncedSearch && (
+                    <p className="text-sm text-slate-400 text-center py-6">
+                      Search for an email thread above to get started.
+                    </p>
+                  )}
+
+                  {!threadsFetching && threads.length > 0 && (
+                    <ul className="border border-slate-200 rounded-lg divide-y divide-slate-100 overflow-hidden">
+                      {threads.map((thread) => (
+                        <li key={thread.id}>
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              try {
+                                const { data } = await getGmailThread(thread.id);
+                                setSelectedThread(data);
+                              } catch {
+                                // Fallback to snippet data if detail fetch fails
+                                setSelectedThread({ id: thread.id, subject: thread.snippet, raw_text: "" });
+                              }
+                            }}
+                            className="w-full text-left px-4 py-3 text-sm text-slate-700 hover:bg-slate-50 transition-colors"
+                          >
+                            <p className="font-medium text-slate-800 truncate">
+                              {thread.snippet || "(No subject)"}
+                            </p>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                 </div>
               )}
             </div>

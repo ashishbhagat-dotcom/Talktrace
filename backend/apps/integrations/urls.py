@@ -7,4 +7,10 @@ urlpatterns = [
     path("integrations/zoho/callback/", views.zoho_callback, name="zoho-callback"),
     path("integrations/zoho/disconnect/", views.zoho_disconnect, name="zoho-disconnect"),
     path("integrations/zoho/sync/", views.zoho_sync_now, name="zoho-sync"),
+    path("integrations/gmail/status/", views.gmail_status, name="gmail-status"),
+    path("integrations/gmail/connect/", views.gmail_connect, name="gmail-connect"),
+    path("integrations/gmail/callback/", views.gmail_callback, name="gmail-callback"),
+    path("integrations/gmail/disconnect/", views.gmail_disconnect, name="gmail-disconnect"),
+    path("integrations/gmail/threads/", views.gmail_threads, name="gmail-threads"),
+    path("integrations/gmail/threads/<str:thread_id>/", views.gmail_thread_detail, name="gmail-thread-detail"),
 ]

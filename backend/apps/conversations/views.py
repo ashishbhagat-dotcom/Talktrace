@@ -65,6 +65,58 @@ class ConversationViewSet(viewsets.ModelViewSet):
         conversation = self.get_object()
         return Response(ConversationStatusSerializer(conversation).data)
 
+    @action(detail=False, methods=["post"], url_path="from-gmail")
+    def import_from_gmail(self, request):
+        from apps.integrations.models import GmailCredential
+        from apps.integrations.services import gmail_client as gc
+
+        thread_id = request.data.get("thread_id")
+        customer_id = request.data.get("customer_id")
+        conversation_type = request.data.get("conversation_type", "email")
+        interaction_date = request.data.get("interaction_date")
+
+        if not thread_id or not customer_id:
+            return Response(
+                {"error": "thread_id and customer_id are required"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            cred = GmailCredential.objects.get(user=request.user)
+        except GmailCredential.DoesNotExist:
+            return Response(
+                {"error": "Gmail not connected. Connect Gmail in Settings first."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            access_token = gc.get_valid_token(cred)
+            thread = gc.get_thread(access_token, thread_id)
+        except Exception as e:
+            logger.error(f"Failed to fetch Gmail thread {thread_id}: {e}")
+            return Response({"error": "Failed to fetch thread from Gmail"}, status=status.HTTP_502_BAD_GATEWAY)
+
+        conversation = Conversation.objects.create(
+            customer_id=customer_id,
+            conversation_type=conversation_type,
+            raw_text=thread["raw_text"],
+            gmail_thread_id=thread_id,
+            created_by=request.user,
+            ai_status=Conversation.AIStatus.PENDING,
+            interaction_date=interaction_date or timezone.now(),
+        )
+
+        try:
+            from .tasks import trigger_ai_pipeline
+            trigger_ai_pipeline(str(conversation.id))
+        except Exception as e:
+            logger.error(f"Failed to trigger AI pipeline for gmail import {conversation.id}: {e}")
+
+        return Response(
+            ConversationDetailSerializer(conversation, context={"request": request}).data,
+            status=status.HTTP_201_CREATED,
+        )
+
     @action(
         detail=False,
         methods=["post"],
