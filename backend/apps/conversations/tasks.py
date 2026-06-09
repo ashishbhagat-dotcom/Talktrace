@@ -62,7 +62,7 @@ def extract_with_llm(self, conversation_id: str):
         # Create ActionItems from extracted data
         action_items = result.get("action_items", [])
         if action_items:
-            ActionItem.objects.bulk_create([
+            created_items = ActionItem.objects.bulk_create([
                 ActionItem(
                     conversation_id=conversation_id,
                     description=item["description"],
@@ -72,6 +72,9 @@ def extract_with_llm(self, conversation_id: str):
                 for item in action_items
                 if item.get("description")
             ])
+            from apps.integrations.tasks import push_action_item_to_zoho
+            for item in created_items:
+                push_action_item_to_zoho.delay(str(item.id))
 
         logger.info(f"LLM extraction complete for conversation {conversation_id}")
     except Exception as exc:

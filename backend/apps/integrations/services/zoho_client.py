@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 
 ZOHO_ACCOUNTS_URL = getattr(settings, "ZOHO_ACCOUNTS_URL", "https://accounts.zoho.com")
 ZOHO_API_URL = getattr(settings, "ZOHO_API_URL", "https://www.zohoapis.com")
-SCOPES = "ZohoCRM.modules.Contacts.READ,ZohoCRM.modules.Leads.READ,ZohoCRM.modules.Notes.CREATE,ZohoCRM.users.READ"
+SCOPES = "ZohoCRM.modules.Contacts.READ,ZohoCRM.modules.Leads.READ,ZohoCRM.modules.Notes.CREATE,ZohoCRM.modules.Tasks.CREATE,ZohoCRM.users.READ"
 
 
 def get_auth_url(redirect_uri: str, state: str = "") -> str:
@@ -116,6 +116,41 @@ def fetch_records(access_token: str, module: str, modified_since: str = None, pa
         return {"data": [], "info": {"more_records": False}}
     response.raise_for_status()
     return response.json()
+
+
+def create_task(
+    access_token: str,
+    subject: str,
+    description: str = "",
+    due_date: str = None,
+    priority: str = "Normal",
+    zoho_record_id: str = None,
+    zoho_module: str = None,
+) -> str:
+    """Create a Task in Zoho CRM. Returns the new task ID."""
+    task_data: dict = {
+        "Subject": subject[:255],
+        "Status": "Not Started",
+        "Priority": priority,
+    }
+    if description:
+        task_data["Description"] = description[:32000]
+    if due_date:
+        task_data["Due_Date"] = due_date  # YYYY-MM-DD
+    if zoho_record_id and zoho_module:
+        task_data["Who_Id"] = {"id": zoho_record_id, "module": {"api_name": zoho_module}}
+
+    response = httpx.post(
+        f"{ZOHO_API_URL}/crm/v2/Tasks",
+        headers=_headers(access_token),
+        json={"data": [task_data]},
+        timeout=30,
+    )
+    response.raise_for_status()
+    result = response.json().get("data", [{}])[0]
+    if result.get("status") != "success":
+        raise ValueError(f"Zoho task creation failed: {result}")
+    return result["details"]["id"]
 
 
 def create_note(access_token: str, module: str, record_id: str, title: str, content: str) -> str:

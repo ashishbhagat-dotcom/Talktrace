@@ -44,6 +44,39 @@ def sync_zoho_for_user(self, user_id: int):
         raise self.retry(exc=exc, countdown=60)
 
 
+@shared_task(name="integrations.push_action_item_to_zoho", bind=True, max_retries=2)
+def push_action_item_to_zoho(self, action_item_id: str):
+    """Push an ActionItem as a Task in Zoho CRM.
+
+    Uses the rep's own token if connected, falls back to any admin token.
+    """
+    from apps.conversations.models import ActionItem
+    from .models import ZohoCredential
+    from .services.zoho_sync import push_action_item_task
+
+    try:
+        action_item = ActionItem.objects.select_related(
+            "conversation__customer", "conversation__created_by"
+        ).get(id=action_item_id)
+
+        credential = None
+        if action_item.conversation.created_by_id:
+            credential = ZohoCredential.objects.filter(
+                user_id=action_item.conversation.created_by_id
+            ).first()
+        if not credential:
+            credential = ZohoCredential.objects.filter(user__role="admin").first()
+        if not credential:
+            return  # nobody connected to Zoho
+
+        task_id = push_action_item_task(action_item, credential)
+        if task_id:
+            ActionItem.objects.filter(id=action_item_id).update(zoho_task_id=task_id)
+    except Exception as exc:
+        logger.error(f"Zoho task push failed for action item {action_item_id}: {exc}")
+        raise self.retry(exc=exc, countdown=30)
+
+
 @shared_task(name="integrations.push_conversation_to_zoho", bind=True, max_retries=2)
 def push_conversation_to_zoho(self, conversation_id: str, user_id: int = None):
     """Push an analyzed conversation's summary as a Zoho CRM note.

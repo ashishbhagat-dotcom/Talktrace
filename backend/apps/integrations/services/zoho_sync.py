@@ -88,6 +88,58 @@ def sync_from_zoho(credential) -> dict:
     return counts
 
 
+_PRIORITY_MAP = {
+    "low": "Low",
+    "medium": "Normal",
+    "high": "High",
+    "urgent": "Highest",
+}
+
+_MODULE_MAP = {"contact": "Contacts", "lead": "Leads", "account": "Accounts"}
+
+
+def push_action_item_task(action_item, credential) -> str | None:
+    """Push an ActionItem as a Task on the linked Zoho CRM record. Returns Zoho task ID."""
+    customer = action_item.conversation.customer
+    if not customer.zoho_record_id:
+        logger.debug(f"Customer {customer.id} has no Zoho record ID, skipping task push")
+        return None
+
+    try:
+        access_token = zc.get_valid_token(credential)
+        zoho_module = _MODULE_MAP.get(customer.type, "Contacts")
+
+        rep_name = (
+            action_item.conversation.created_by.name
+            if action_item.conversation.created_by
+            else "Unknown Rep"
+        )
+        subject = f"[Talktrace] {action_item.description[:200]}"
+        description = (
+            f"Follow-up from Talktrace conversation on "
+            f"{action_item.conversation.interaction_date.strftime('%b %d, %Y')} "
+            f"with {rep_name}.\n\nTask: {action_item.description}"
+        )
+        due_date = action_item.due_date.strftime("%Y-%m-%d") if action_item.due_date else None
+        priority = _PRIORITY_MAP.get(action_item.priority, "Normal")
+
+        task_id = zc.create_task(
+            access_token,
+            subject=subject,
+            description=description,
+            due_date=due_date,
+            priority=priority,
+            zoho_record_id=customer.zoho_record_id,
+            zoho_module=zoho_module,
+        )
+        logger.info(f"Created Zoho task {task_id} for action item {action_item.id}")
+        return task_id
+
+    except Exception as e:
+        logger.error(f"Failed to push action item {action_item.id} to Zoho: {e}")
+        raise
+
+
 def push_conversation_note(conversation, credential) -> bool:
     """Push AI summary as a Note on the linked Zoho CRM record."""
     customer = conversation.customer
