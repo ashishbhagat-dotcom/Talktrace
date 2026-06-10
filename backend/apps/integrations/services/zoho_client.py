@@ -118,28 +118,8 @@ def fetch_records(access_token: str, module: str, modified_since: str = None, pa
     return response.json()
 
 
-def create_task(
-    access_token: str,
-    subject: str,
-    description: str = "",
-    due_date: str = None,
-    priority: str = "Normal",
-    zoho_record_id: str = None,
-    zoho_module: str = None,
-) -> str:
-    """Create a Task in Zoho CRM. Returns the new task ID."""
-    task_data: dict = {
-        "Subject": subject[:255],
-        "Status": "Not Started",
-        "Priority": priority,
-    }
-    if description:
-        task_data["Description"] = description[:32000]
-    if due_date:
-        task_data["Due_Date"] = due_date  # YYYY-MM-DD
-    if zoho_record_id and zoho_module:
-        task_data["Who_Id"] = {"id": zoho_record_id, "module": {"api_name": zoho_module}}
-
+def _post_task(access_token: str, task_data: dict) -> str:
+    """POST task_data to Zoho and return the new task ID. Raises on failure."""
     response = httpx.post(
         f"{ZOHO_API_URL}/crm/v2/Tasks",
         headers=_headers(access_token),
@@ -151,6 +131,44 @@ def create_task(
     if result.get("status") != "success":
         raise ValueError(f"Zoho task creation failed: {result}")
     return result["details"]["id"]
+
+
+def create_task(
+    access_token: str,
+    subject: str,
+    description: str = "",
+    due_date: str = None,
+    priority: str = "Normal",
+    zoho_record_id: str = None,
+    zoho_module: str = None,
+) -> str:
+    """Create a Task in Zoho CRM. Returns the new task ID.
+
+    If Who_Id linkage fails (common for Leads in some Zoho configs),
+    falls back to creating the task without the record link.
+    """
+    task_data: dict = {
+        "Subject": subject[:255],
+        "Status": "Not Started",
+        "Priority": priority,
+    }
+    if description:
+        task_data["Description"] = description[:32000]
+    if due_date:
+        task_data["Due_Date"] = due_date  # YYYY-MM-DD
+
+    if zoho_record_id and zoho_module:
+        task_data["Who_Id"] = {"id": zoho_record_id, "module": {"api_name": zoho_module}}
+        try:
+            return _post_task(access_token, task_data)
+        except ValueError as e:
+            if "Who_Id" in str(e):
+                logger.warning(f"Who_Id linkage failed for {zoho_module} {zoho_record_id}, retrying without link: {e}")
+                del task_data["Who_Id"]
+            else:
+                raise
+
+    return _post_task(access_token, task_data)
 
 
 def create_note(access_token: str, module: str, record_id: str, title: str, content: str) -> str:
