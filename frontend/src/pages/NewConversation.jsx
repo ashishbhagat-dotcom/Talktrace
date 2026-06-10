@@ -21,9 +21,10 @@ export default function NewConversation() {
   const navigate = useNavigate();
   const [customer, setCustomer] = useState(null);
   const [convType, setConvType] = useState("phone_call");
-  const [interactionDate, setInteractionDate] = useState(
-    new Date().toISOString().slice(0, 16)
-  );
+  const [interactionDate, setInteractionDate] = useState(() => {
+    const now = new Date();
+    return new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+  });
   const [activeTab, setActiveTab] = useState("text");
   const [rawText, setRawText] = useState("");
   const [audioBlob, setAudioBlob] = useState(null);

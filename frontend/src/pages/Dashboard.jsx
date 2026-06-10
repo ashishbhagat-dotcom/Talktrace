@@ -35,7 +35,7 @@ export default function Dashboard() {
 
   const { data: recent, isLoading: recentLoading } = useQuery({
     queryKey: ["conversations-recent"],
-    queryFn: () => getConversations({ page_size: 10 }).then((r) => r.data),
+    queryFn: () => getConversations({ page_size: 10, ordering: "-created_at" }).then((r) => r.data),
   });
 
   return (

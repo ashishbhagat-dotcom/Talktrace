@@ -217,10 +217,9 @@ def gmail_threads(request):
     from .services import gmail_client as gc
     query = request.GET.get("q", "")
     customer_email = request.GET.get("customer_email", "")
+    # Use customer_email as default filter only when no explicit search query is given
     if customer_email and not query:
         query = f"from:{customer_email} OR to:{customer_email}"
-    elif customer_email:
-        query = f"({query}) AND (from:{customer_email} OR to:{customer_email})"
 
     try:
         access_token = gc.get_valid_token(cred)
