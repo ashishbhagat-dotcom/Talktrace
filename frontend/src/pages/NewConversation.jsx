@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Loader2, Phone, Users, Video, MessageCircle, Mail, MoreHorizontal, Search, ChevronLeft } from "lucide-react";
 import toast from "react-hot-toast";
 import { createConversation, uploadVoice } from "../api/conversations";
@@ -19,6 +19,7 @@ const TYPES = [
 
 export default function NewConversation() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [customer, setCustomer] = useState(null);
   const [convType, setConvType] = useState("phone_call");
   const [interactionDate, setInteractionDate] = useState(() => {
@@ -132,6 +133,8 @@ export default function NewConversation() {
         conversation = data;
       }
 
+      queryClient.invalidateQueries({ queryKey: ["conversations-recent"] });
+      queryClient.invalidateQueries({ queryKey: ["analytics-summary"] });
       toast.success("Conversation saved! AI is analyzing...");
       navigate(`/conversations/${conversation.id}`);
     } catch (err) {
