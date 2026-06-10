@@ -178,6 +178,20 @@ services:
     environment:
       - VITE_API_URL=http://django:8000
 
+  # ─── Caddy (reverse proxy + auto HTTPS) ─────────────────────────────────────
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - frontend
+
 volumes:
   postgres_data:
   redis_data:
@@ -185,3 +199,5 @@ volumes:
   minio_data:
   ollama_data:
   hf_cache:
+  caddy_data:
+  caddy_config:
