@@ -20,7 +20,7 @@ EXTRACTION_PROMPT = """You are a CRM assistant. Analyze this conversation and re
   "sentiment": "one of: very_negative, negative, neutral, positive, very_positive",
   "sentiment_score": 0.0,
   "action_items": [
-    {{"description": "action to take", "due_date": "YYYY-MM-DD or null", "priority": "low|medium|high"}}
+    {{"description": "action to take", "due_date": "2025-12-31", "priority": "low|medium|high"}}
   ],
   "topics": ["topic1", "topic2"],
   "competitor_mentions": ["competitor_name"]
@@ -34,6 +34,15 @@ class ActionItemExtracted(BaseModel):
     description: str
     due_date: Optional[str] = None
     priority: str = "medium"
+
+    @field_validator("due_date", mode="before")
+    @classmethod
+    def sanitize_due_date(cls, v):
+        if not v or v in ("null", "None", ""):
+            return None
+        # Extract just the YYYY-MM-DD portion; discard anything after a space
+        match = re.match(r"(\d{4}-\d{2}-\d{2})", str(v))
+        return match.group(1) if match else None
 
     @field_validator("priority")
     @classmethod

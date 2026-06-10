@@ -132,8 +132,10 @@ services:
     env_file: .env
     environment:
       - DJANGO_SETTINGS_MODULE=config.settings.development
+      - HF_HOME=/root/.cache/huggingface
     volumes:
       - ./backend:/app
+      - hf_cache:/root/.cache/huggingface
     depends_on:
       postgres:
         condition: service_healthy
@@ -182,3 +184,4 @@ volumes:
   es_data:
   minio_data:
   ollama_data:
+  hf_cache:
