@@ -62,8 +62,8 @@ function ZohoIntegrationCard() {
 
   return (
     <div className="card p-6">
-      <div className="flex items-start justify-between mb-4">
-        <div>
+      <div className="flex items-start justify-between gap-3 mb-4">
+        <div className="min-w-0">
           <h2 className="font-semibold text-slate-800 flex items-center gap-2">
             <img
               src="https://upload.wikimedia.org/wikipedia/commons/thumb/2/20/Zoho_logo.svg/200px-Zoho_logo.svg.png"
@@ -80,11 +80,11 @@ function ZohoIntegrationCard() {
         {isLoading ? (
           <Loader2 size={18} className="animate-spin text-slate-400" />
         ) : connected ? (
-          <span className="flex items-center gap-1.5 text-xs font-medium text-green-600 bg-green-50 px-2.5 py-1 rounded-full">
+          <span className="flex-shrink-0 flex items-center gap-1.5 text-xs font-medium text-green-600 bg-green-50 px-2.5 py-1 rounded-full">
             <CheckCircle2 size={13} /> Connected
           </span>
         ) : (
-          <span className="flex items-center gap-1.5 text-xs font-medium text-slate-500 bg-slate-100 px-2.5 py-1 rounded-full">
+          <span className="flex-shrink-0 flex items-center gap-1.5 text-xs font-medium text-slate-500 bg-slate-100 px-2.5 py-1 rounded-full">
             <XCircle size={13} /> Not connected
           </span>
         )}
@@ -224,11 +224,11 @@ function GmailIntegrationCard() {
         {isLoading ? (
           <Loader2 size={18} className="animate-spin text-slate-400" />
         ) : connected ? (
-          <span className="flex items-center gap-1.5 text-xs font-medium text-green-600 bg-green-50 px-2.5 py-1 rounded-full">
+          <span className="flex-shrink-0 flex items-center gap-1.5 text-xs font-medium text-green-600 bg-green-50 px-2.5 py-1 rounded-full">
             <CheckCircle2 size={13} /> Connected
           </span>
         ) : (
-          <span className="flex items-center gap-1.5 text-xs font-medium text-slate-500 bg-slate-100 px-2.5 py-1 rounded-full">
+          <span className="flex-shrink-0 flex items-center gap-1.5 text-xs font-medium text-slate-500 bg-slate-100 px-2.5 py-1 rounded-full">
             <XCircle size={13} /> Not connected
           </span>
         )}
