@@ -10,6 +10,20 @@ from rest_framework.views import APIView
 from apps.conversations.models import ActionItem, Conversation
 
 
+def _base_conversations(request):
+    qs = Conversation.objects.filter(is_deleted=False)
+    if request.user.role == "member":
+        qs = qs.filter(created_by=request.user)
+    return qs
+
+
+def _base_action_items(request):
+    qs = ActionItem.objects.filter(conversation__is_deleted=False)
+    if request.user.role == "member":
+        qs = qs.filter(conversation__created_by=request.user)
+    return qs
+
+
 def _get_date_range(request):
     date_from = request.query_params.get("date_from")
     date_to = request.query_params.get("date_to")
@@ -76,8 +90,7 @@ class VolumeView(APIView):
         )
 
         data = (
-            Conversation.objects.filter(
-                is_deleted=False,
+            _base_conversations(request).filter(
                 interaction_date__date__gte=date_from,
                 interaction_date__date__lte=date_to,
             )
@@ -100,8 +113,7 @@ class SentimentView(APIView):
         date_from, date_to = _get_date_range(request)
 
         distribution = (
-            Conversation.objects.filter(
-                is_deleted=False,
+            _base_conversations(request).filter(
                 interaction_date__date__gte=date_from,
                 interaction_date__date__lte=date_to,
                 sentiment__isnull=False,
@@ -112,8 +124,7 @@ class SentimentView(APIView):
         )
 
         trend = (
-            Conversation.objects.filter(
-                is_deleted=False,
+            _base_conversations(request).filter(
                 interaction_date__date__gte=date_from,
                 interaction_date__date__lte=date_to,
             )
@@ -139,8 +150,7 @@ class TeamActivityView(APIView):
         date_from, date_to = _get_date_range(request)
 
         data = (
-            Conversation.objects.filter(
-                is_deleted=False,
+            _base_conversations(request).filter(
                 interaction_date__date__gte=date_from,
                 interaction_date__date__lte=date_to,
                 created_by__isnull=False,
@@ -167,8 +177,7 @@ class TopicsView(APIView):
     def get(self, request):
         date_from, date_to = _get_date_range(request)
 
-        conversations = Conversation.objects.filter(
-            is_deleted=False,
+        conversations = _base_conversations(request).filter(
             interaction_date__date__gte=date_from,
             interaction_date__date__lte=date_to,
         ).values_list("topics", flat=True)
@@ -188,8 +197,7 @@ class CompetitorsView(APIView):
     def get(self, request):
         date_from, date_to = _get_date_range(request)
 
-        conversations = Conversation.objects.filter(
-            is_deleted=False,
+        conversations = _base_conversations(request).filter(
             interaction_date__date__gte=date_from,
             interaction_date__date__lte=date_to,
         ).values_list("competitor_mentions", flat=True)
@@ -209,8 +217,7 @@ class FollowUpsView(APIView):
     def get(self, request):
         date_from, date_to = _get_date_range(request)
 
-        items = ActionItem.objects.filter(
-            conversation__is_deleted=False,
+        items = _base_action_items(request).filter(
             created_at__date__gte=date_from,
             created_at__date__lte=date_to,
         )

@@ -189,10 +189,13 @@ class ActionItemViewSet(viewsets.ModelViewSet):
     http_method_names = ["get", "put", "patch", "delete", "head", "options"]
 
     def get_queryset(self):
-        return (
+        qs = (
             ActionItem.objects.filter(conversation__is_deleted=False)
             .select_related("assigned_to", "conversation__customer")
         )
+        if self.request.user.role == "member":
+            qs = qs.filter(conversation__created_by=self.request.user)
+        return qs
 
     def perform_update(self, serializer):
         assigned_to_id = serializer.validated_data.pop("assigned_to_id", None)
