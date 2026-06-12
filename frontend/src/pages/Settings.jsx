@@ -74,7 +74,7 @@ function ZohoIntegrationCard() {
             Zoho CRM
           </h2>
           <p className="text-sm text-slate-500 mt-1">
-            Sync contacts and leads from Zoho. Automatically push AI summaries as CRM notes.
+            Connect your personal Zoho account. AI summaries and follow-up tasks will appear in Zoho under your name.
           </p>
         </div>
         {isLoading ? (
@@ -344,7 +344,7 @@ export default function Settings() {
       <div>
         <h2 className="font-semibold text-slate-800 mb-3">Integrations</h2>
         <div className="space-y-4">
-          {user?.role === "admin" && <ZohoIntegrationCard />}
+          <ZohoIntegrationCard />
           <GmailIntegrationCard />
         </div>
       </div>
