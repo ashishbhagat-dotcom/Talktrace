@@ -35,8 +35,8 @@ class ConversationViewSet(viewsets.ModelViewSet):
                 )
             )
         )
-        # Admins see all conversations; reps see only their own
-        if self.request.user.role != "admin":
+        # Members see only their own conversations; admins and managers see all
+        if self.request.user.role == "member":
             qs = qs.filter(created_by=self.request.user)
         return qs
 

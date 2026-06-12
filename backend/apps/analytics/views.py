@@ -29,6 +29,11 @@ class AnalyticsSummaryView(APIView):
     def get(self, request):
         date_from, date_to = _get_date_range(request)
         conversations = Conversation.objects.filter(is_deleted=False)
+
+        # Members only see their own stats; admins and managers see all
+        if request.user.role == "member":
+            conversations = conversations.filter(created_by=request.user)
+
         period_convs = conversations.filter(
             interaction_date__date__gte=date_from,
             interaction_date__date__lte=date_to,
@@ -36,14 +41,15 @@ class AnalyticsSummaryView(APIView):
 
         total = period_convs.count()
         avg_sentiment = period_convs.aggregate(avg=Avg("sentiment_score"))["avg"] or 0
-        pending_actions = ActionItem.objects.filter(
-            status="pending",
-            conversation__is_deleted=False,
-        ).count()
-        overdue_actions = ActionItem.objects.filter(
+
+        action_qs = ActionItem.objects.filter(conversation__is_deleted=False)
+        if request.user.role == "member":
+            action_qs = action_qs.filter(conversation__created_by=request.user)
+
+        pending_actions = action_qs.filter(status="pending").count()
+        overdue_actions = action_qs.filter(
             status="pending",
             due_date__lt=timezone.now().date(),
-            conversation__is_deleted=False,
         ).count()
         active_customers = period_convs.values("customer").distinct().count()
 
