@@ -35,6 +35,9 @@ class ConversationViewSet(viewsets.ModelViewSet):
                 )
             )
         )
+        # Admins see all conversations; reps see only their own
+        if self.request.user.role != "admin":
+            qs = qs.filter(created_by=self.request.user)
         return qs
 
     def get_serializer_class(self):

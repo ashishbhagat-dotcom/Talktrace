@@ -344,7 +344,7 @@ export default function Settings() {
       <div>
         <h2 className="font-semibold text-slate-800 mb-3">Integrations</h2>
         <div className="space-y-4">
-          <ZohoIntegrationCard />
+          {user?.role === "admin" && <ZohoIntegrationCard />}
           <GmailIntegrationCard />
         </div>
       </div>
