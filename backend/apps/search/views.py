@@ -32,10 +32,16 @@ class SearchView(APIView):
         # Remove empty filters
         filters = {k: v for k, v in filters.items() if v}
 
+        # Members only see their own conversations; admins and managers see all
+        if request.user.role == "member":
+            filters["created_by"] = str(request.user.id)
+
         if not query:
             qs = Conversation.objects.filter(is_deleted=False).select_related(
                 "customer", "created_by"
             ).order_by("-interaction_date")
+            if request.user.role == "member":
+                qs = qs.filter(created_by=request.user)
             paginator = StandardResultsPagination()
             page_qs = paginator.paginate_queryset(qs, request)
             serializer = ConversationListSerializer(page_qs, many=True)
