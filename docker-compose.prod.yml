@@ -150,17 +150,28 @@ services:
     volumes:
       - ollama_data:/root/.ollama
 
-  # ─── React Frontend served via Nginx on port 80 ─────────────────────────────
+  # ─── React Frontend served via internal Nginx (Caddy fronts it) ────────────
   frontend:
     build:
       context: .
       dockerfile: frontend/Dockerfile.prod
     restart: unless-stopped
+    depends_on:
+      - django
+
+  # ─── Caddy: public reverse proxy with auto Let's Encrypt TLS ───────────────
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
     ports:
       - "80:80"
       - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
     depends_on:
-      - django
+      - frontend
 
 volumes:
   postgres_data:
@@ -169,3 +180,5 @@ volumes:
   minio_data:
   static_files:
   ollama_data:
+  caddy_data:
+  caddy_config:
