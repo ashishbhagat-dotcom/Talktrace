@@ -78,6 +78,7 @@ export default function CreateRecord() {
     onSuccess: (draft) => {
       setDraftId(draft.id);
       setStep("review");
+      queryClient.invalidateQueries({ queryKey: ["crm-drafts-list"] });
     },
     onError: (err) => {
       toast.error(err.response?.data?.error || "Failed to create draft");
@@ -100,15 +101,17 @@ export default function CreateRecord() {
           navigate("/");
         }}
         onBack={() => {
+          // Always go back to the type-picker so the user sees their draft
+          // listed under "Continue a draft" (the draft stays saved server-side).
           setSearchParams({});
-          if (initialDraftId) {
-            // Resumed draft — go back to the drafts list rather than the capture screen
-            setStep("type");
-            setDraftId(null);
-            queryClient.invalidateQueries({ queryKey: ["crm-drafts-list"] });
-          } else {
-            setStep("capture");
-          }
+          setStep("type");
+          setDraftId(null);
+          // Clear the capture-form state so a fresh draft starts blank
+          setRecordType(null);
+          setRawText("");
+          setAudioBlob(null);
+          setAudioMime(null);
+          queryClient.invalidateQueries({ queryKey: ["crm-drafts-list"] });
         }}
       />
     );
