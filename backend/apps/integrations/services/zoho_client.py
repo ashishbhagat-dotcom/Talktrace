@@ -17,6 +17,7 @@ SCOPES = ",".join([
     "ZohoCRM.modules.Notes.CREATE",
     "ZohoCRM.modules.Tasks.CREATE",
     "ZohoCRM.settings.fields.READ",   # field metadata (required fields, types)
+    "ZohoCRM.settings.layouts.READ",  # layout-level required fields
     "ZohoCRM.users.READ",
 ])
 
@@ -166,17 +167,39 @@ def create_task(
         task_data["Due_Date"] = due_date  # YYYY-MM-DD
 
     if zoho_record_id and zoho_module:
-        task_data["Who_Id"] = {"id": zoho_record_id, "module": {"api_name": zoho_module}}
+        # Zoho's docs say Who_Id for Contacts/Leads and What_Id for Accounts/Deals,
+        # but our org's sandbox actually accepts What_Id + $se_module for all modules
+        # (Who_Id returns INVALID_DATA). Using What_Id is the format that works.
+        task_data["What_Id"] = zoho_record_id
+        task_data["$se_module"] = zoho_module
         try:
             return _post_task(access_token, task_data)
         except ValueError as e:
-            if "Who_Id" in str(e):
-                logger.warning(f"Who_Id linkage failed for {zoho_module} {zoho_record_id}, retrying without link: {e}")
-                del task_data["Who_Id"]
+            err = str(e)
+            if "Who_Id" in err or "What_Id" in err or "se_module" in err:
+                logger.warning(f"Task linkage failed for {zoho_module} {zoho_record_id}, retrying without link: {e}")
+                task_data.pop("Who_Id", None)
+                task_data.pop("What_Id", None)
+                task_data.pop("$se_module", None)
             else:
                 raise
 
     return _post_task(access_token, task_data)
+
+
+def create_record(access_token: str, module: str, fields: dict) -> str:
+    """Create a record in a Zoho module (Leads, Accounts, etc.). Returns new record ID."""
+    response = httpx.post(
+        f"{ZOHO_API_URL}/crm/v2/{module}",
+        headers=_headers(access_token),
+        json={"data": [fields], "trigger": ["approval", "workflow", "blueprint"]},
+        timeout=30,
+    )
+    response.raise_for_status()
+    result = response.json().get("data", [{}])[0]
+    if result.get("status") != "success":
+        raise ValueError(f"Zoho {module} creation failed: {result}")
+    return result["details"]["id"]
 
 
 def create_note(access_token: str, module: str, record_id: str, title: str, content: str) -> str:

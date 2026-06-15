@@ -12,6 +12,7 @@ import Analytics from "./pages/Analytics";
 import Settings from "./pages/Settings";
 import Customers from "./pages/Customers";
 import Users from "./pages/Users";
+import CreateRecord from "./pages/CreateRecord";
 
 function ProtectedRoute({ children }) {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
@@ -32,6 +33,7 @@ export default function AppRouter() {
       >
         <Route index element={<Dashboard />} />
         <Route path="conversations/new" element={<NewConversation />} />
+        <Route path="create-record" element={<CreateRecord />} />
         <Route path="conversations/:id" element={<ConversationView />} />
         <Route path="search" element={<SearchPage />} />
         <Route path="customers" element={<Customers />} />

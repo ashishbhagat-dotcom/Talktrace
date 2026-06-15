@@ -13,4 +13,9 @@ urlpatterns = [
     path("integrations/gmail/disconnect/", views.gmail_disconnect, name="gmail-disconnect"),
     path("integrations/gmail/threads/", views.gmail_threads, name="gmail-threads"),
     path("integrations/gmail/threads/<str:thread_id>/", views.gmail_thread_detail, name="gmail-thread-detail"),
+
+    # Lead/Account creation from conversation (CRMDraft flow)
+    path("crm-drafts/", views.crm_drafts, name="crm-drafts"),
+    path("crm-drafts/<uuid:draft_id>/", views.crm_draft_detail, name="crm-draft-detail"),
+    path("crm-drafts/<uuid:draft_id>/submit/", views.crm_draft_submit, name="crm-draft-submit"),
 ]

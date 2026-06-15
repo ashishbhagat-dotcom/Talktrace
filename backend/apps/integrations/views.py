@@ -4,7 +4,7 @@ from django.conf import settings
 from django.http import HttpResponseRedirect
 from django.utils import timezone
 from rest_framework import permissions, status
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework.decorators import api_view, parser_classes, permission_classes
 from rest_framework.response import Response
 
 from .models import ZohoCredential, GmailCredential
@@ -247,3 +247,149 @@ def gmail_thread_detail(request, thread_id):
     except Exception as e:
         logger.error(f"Gmail thread fetch failed for thread {thread_id}: {e}")
         return Response({"error": "Failed to fetch thread"}, status=status.HTTP_502_BAD_GATEWAY)
+
+
+# ─── CRM Draft (Lead/Account from Conversation) ──────────────────────────────
+
+from rest_framework.parsers import FormParser, JSONParser, MultiPartParser  # noqa: E402
+
+
+@api_view(["GET", "POST"])
+@permission_classes([permissions.IsAuthenticated])
+@parser_classes([JSONParser, MultiPartParser, FormParser])
+def crm_drafts(request):
+    from apps.conversations.models import Attachment
+    from .models import CRMDraft
+    from .serializers import CRMDraftCreateSerializer, CRMDraftSerializer
+    from .tasks import extract_crm_draft
+
+    if request.method == "GET":
+        qs = CRMDraft.objects.filter(created_by=request.user).order_by("-created_at")
+        if request.user.role == "admin":
+            qs = CRMDraft.objects.all().order_by("-created_at")
+        return Response(CRMDraftSerializer(qs[:50], many=True).data)
+
+    # Handle audio upload (multipart) — create an Attachment first
+    attachment_id = None
+    audio_file = request.FILES.get("audio") if request.FILES else None
+    if audio_file:
+        if audio_file.content_type not in settings.ALLOWED_AUDIO_TYPES:
+            return Response(
+                {"error": f"Unsupported audio type: {audio_file.content_type}"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if audio_file.size > settings.AUDIO_UPLOAD_MAX_SIZE:
+            return Response({"error": "Audio file too large"}, status=status.HTTP_400_BAD_REQUEST)
+        attachment = Attachment.objects.create(
+            conversation=None,
+            file_type=Attachment.FileType.AUDIO,
+            file=audio_file,
+            original_filename=audio_file.name,
+        )
+        attachment_id = str(attachment.id)
+
+    payload = {
+        "record_type": request.data.get("record_type"),
+        "raw_text": request.data.get("raw_text", ""),
+    }
+    if attachment_id:
+        payload["attachment_id"] = attachment_id
+
+    serializer = CRMDraftCreateSerializer(data=payload)
+    serializer.is_valid(raise_exception=True)
+    data = serializer.validated_data
+
+    draft = CRMDraft.objects.create(
+        created_by=request.user,
+        record_type=data["record_type"],
+        raw_text=data.get("raw_text", ""),
+        attachment_id=data.get("attachment_id"),
+        status=CRMDraft.Status.PENDING,
+    )
+    extract_crm_draft.delay(str(draft.id))
+    return Response(CRMDraftSerializer(draft).data, status=status.HTTP_201_CREATED)
+
+
+def _get_draft_or_404(request, draft_id):
+    from .models import CRMDraft
+    qs = CRMDraft.objects.all() if request.user.role == "admin" else CRMDraft.objects.filter(created_by=request.user)
+    try:
+        return qs.get(id=draft_id)
+    except CRMDraft.DoesNotExist:
+        return None
+
+
+@api_view(["GET", "PATCH", "DELETE"])
+@permission_classes([permissions.IsAuthenticated])
+def crm_draft_detail(request, draft_id):
+    from .serializers import CRMDraftSerializer, CRMDraftUpdateSerializer
+
+    draft = _get_draft_or_404(request, draft_id)
+    if not draft:
+        return Response({"error": "Not found"}, status=status.HTTP_404_NOT_FOUND)
+
+    if request.method == "GET":
+        return Response(CRMDraftSerializer(draft).data)
+
+    if request.method == "DELETE":
+        draft.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+    if draft.status == "submitted":
+        return Response(
+            {"error": "Cannot edit a draft that has been submitted."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    update_ser = CRMDraftUpdateSerializer(data=request.data)
+    update_ser.is_valid(raise_exception=True)
+    update_ser.update(draft, update_ser.validated_data)
+    return Response(CRMDraftSerializer(draft).data)
+
+
+@api_view(["POST"])
+@permission_classes([permissions.IsAuthenticated])
+def crm_draft_submit(request, draft_id):
+    from .serializers import CRMDraftSerializer
+    from .services.zoho_fields import get_schema, module_for_record_type, required_fields
+    from .models import ZohoCredential
+
+    draft = _get_draft_or_404(request, draft_id)
+    if not draft:
+        return Response({"error": "Not found"}, status=status.HTTP_404_NOT_FOUND)
+    if draft.status == "submitted":
+        return Response({"error": "Already submitted."}, status=status.HTTP_400_BAD_REQUEST)
+    if draft.status not in ("ready", "failed"):
+        return Response(
+            {"error": f"Draft must be in 'ready' state, currently '{draft.status}'."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    # Validate required fields synchronously before kicking off submit
+    cred = ZohoCredential.objects.filter(user_id=draft.created_by_id).first()
+    if not cred:
+        cred = ZohoCredential.objects.filter(user__role="admin").first()
+    if not cred:
+        return Response(
+            {"error": "No Zoho connection available."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    schema = get_schema(cred, module_for_record_type(draft.record_type))
+    missing = [api for api in required_fields(schema) if not draft.extracted_fields.get(api)]
+    if missing:
+        return Response(
+            {"error": "Missing required fields", "missing_required": missing},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    # Run submit synchronously so the response carries the new record id.
+    # The Zoho API call is fast (<2s) and the user is waiting on the result.
+    from .services.zoho_sync import submit_draft_to_zoho
+    try:
+        submit_draft_to_zoho(draft, cred)
+    except Exception as e:
+        logger.error(f"CRMDraft submit failed for {draft.id}: {e}")
+        return Response({"error": str(e)}, status=status.HTTP_502_BAD_GATEWAY)
+    draft.refresh_from_db()
+    return Response(CRMDraftSerializer(draft).data)

@@ -151,7 +151,11 @@ class Attachment(models.Model):
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     conversation = models.ForeignKey(
-        Conversation, on_delete=models.CASCADE, related_name="attachments"
+        Conversation,
+        on_delete=models.CASCADE,
+        related_name="attachments",
+        null=True,
+        blank=True,
     )
     file_type = models.CharField(max_length=20, choices=FileType.choices)
     file = models.FileField(upload_to="attachments/%Y/%m/")

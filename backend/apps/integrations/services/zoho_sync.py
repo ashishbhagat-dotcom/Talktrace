@@ -140,6 +140,131 @@ def push_action_item_task(action_item, credential) -> str | None:
         raise
 
 
+def submit_draft_to_zoho(draft, credential):
+    """Create Zoho Lead/Account from a CRMDraft and attach a note with the transcript."""
+    from apps.customers.models import Customer
+    from .zoho_fields import get_schema, module_for_record_type, required_fields
+
+    module = module_for_record_type(draft.record_type)
+    schema = get_schema(credential, module)
+
+    # Defense-in-depth: validate required fields are present
+    missing = [
+        api for api in required_fields(schema)
+        if not draft.extracted_fields.get(api)
+    ]
+    if missing:
+        raise ValueError(f"Missing required fields: {', '.join(missing)}")
+
+    access_token = zc.get_valid_token(credential)
+
+    # Create the Zoho record
+    record_id = zc.create_record(access_token, module, draft.extracted_fields)
+    draft.zoho_record_id = record_id
+
+    # Build the note body
+    rep_name = draft.created_by.name if draft.created_by else "Unknown Rep"
+    rep_email = draft.created_by.email if draft.created_by else ""
+    record_label = "Lead" if draft.record_type == "lead" else "Account"
+    title = f"Talktrace: {record_label} created from conversation by {rep_name} — {timezone.now().strftime('%b %d, %Y')}"
+
+    lines = [f"Created by: {rep_name} ({rep_email})" if rep_email else f"Created by: {rep_name}"]
+    if draft.ai_summary:
+        lines.append(f"\n**Summary:** {draft.ai_summary}")
+    if draft.topics:
+        lines.append(f"\n**Topics:** {', '.join(draft.topics)}")
+    if draft.action_items:
+        lines.append("\n**Action Items:**")
+        for item in draft.action_items:
+            desc = item.get("description") if isinstance(item, dict) else str(item)
+            if desc:
+                due = item.get("due_date") if isinstance(item, dict) else None
+                lines.append(f"  • {desc}" + (f" (due {due})" if due else ""))
+
+    note_id = zc.create_note(access_token, module, record_id, title, "\n".join(lines))
+    draft.zoho_note_id = note_id
+
+    # Mirror as a local Customer + Conversation so this draft appears in dashboards
+    customer = None
+    try:
+        customer_type = "lead" if draft.record_type == "lead" else "account"
+        name = (
+            draft.extracted_fields.get("Account_Name")
+            or " ".join(filter(None, [
+                draft.extracted_fields.get("First_Name"),
+                draft.extracted_fields.get("Last_Name"),
+            ])).strip()
+            or "Unknown"
+        )
+        customer, _ = Customer.objects.update_or_create(
+            zoho_record_id=record_id,
+            defaults={
+                "name": name[:255],
+                "email": (draft.extracted_fields.get("Email") or draft.extracted_fields.get("Email_ID") or "")[:255],
+                "phone": (draft.extracted_fields.get("Phone") or draft.extracted_fields.get("Mobile") or "")[:50],
+                "company": (draft.extracted_fields.get("Company") or draft.extracted_fields.get("Account_Name") or "")[:255],
+                "type": customer_type,
+            },
+        )
+    except Exception as e:
+        logger.warning(f"Failed to mirror draft {draft.id} as local Customer: {e}")
+
+    # Mirror as a local Conversation so it shows up in dashboards and conversation list
+    if customer:
+        try:
+            from apps.conversations.models import ActionItem, Conversation
+            conversation = Conversation.objects.create(
+                customer=customer,
+                conversation_type="other",
+                raw_text=draft.raw_text,
+                ai_summary=draft.ai_summary,
+                topics=draft.topics or [],
+                created_by=draft.created_by,
+                ai_status=Conversation.AIStatus.COMPLETED,
+                interaction_date=draft.created_at,
+            )
+            # Mirror action items locally so they show up in the Action Items page
+            for item in (draft.action_items or []):
+                if not isinstance(item, dict) or not item.get("description"):
+                    continue
+                ActionItem.objects.create(
+                    conversation=conversation,
+                    description=item["description"][:500],
+                    due_date=item.get("due_date") or None,
+                    priority=item.get("priority", "medium"),
+                )
+        except Exception as e:
+            logger.warning(f"Failed to mirror draft {draft.id} as local Conversation: {e}")
+
+    # Push each action item as a Zoho Task linked to the new record
+    for item in (draft.action_items or []):
+        if not isinstance(item, dict) or not item.get("description"):
+            continue
+        try:
+            zc.create_task(
+                access_token,
+                subject=item["description"][:250],
+                description="From Talktrace draft conversation.",
+                due_date=item.get("due_date") or None,
+                priority={"high": "High", "low": "Low"}.get(item.get("priority"), "Normal"),
+                zoho_record_id=record_id,
+                zoho_module=module,
+            )
+        except Exception as e:
+            logger.warning(f"Failed to push action item to Zoho for draft {draft.id}: {e}")
+
+    # Finalize draft
+    from ..models import CRMDraft
+    draft.status = CRMDraft.Status.SUBMITTED
+    draft.submitted_at = timezone.now()
+    draft.error_message = ""
+    draft.save(update_fields=[
+        "status", "zoho_record_id", "zoho_note_id", "submitted_at",
+        "error_message", "updated_at",
+    ])
+    logger.info(f"CRMDraft {draft.id} submitted as Zoho {module} {record_id}")
+
+
 def push_conversation_note(conversation, credential) -> bool:
     """Push AI summary as a Note on the linked Zoho CRM record."""
     customer = conversation.customer

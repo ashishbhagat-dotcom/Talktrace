@@ -4,12 +4,14 @@ import { clsx } from "clsx";
 import {
   LayoutDashboard, Plus, Search, Users, CheckSquare,
   BarChart2, Settings, MessageSquare, ChevronLeft, ChevronRight, UserCircle,
+  Sparkles,
 } from "lucide-react";
 import useUIStore from "../../store/uiStore";
 
 const NAV = [
   { to: "/", icon: LayoutDashboard, label: "Dashboard", end: true },
   { to: "/conversations/new", icon: Plus, label: "New Conversation" },
+  { to: "/create-record", icon: Sparkles, label: "Create Lead/Account" },
   { to: "/search", icon: Search, label: "Search" },
   { to: "/customers", icon: Users, label: "Customers" },
   { to: "/users", icon: UserCircle, label: "Users" },

@@ -1,17 +1,28 @@
 import { useState, useRef, useEffect } from "react";
+import RecordRTC from "recordrtc";
 import { Mic, Square, AlertCircle } from "lucide-react";
 
 export default function AudioRecorder({ onRecordingComplete }) {
   const [recording, setRecording] = useState(false);
   const [seconds, setSeconds] = useState(0);
   const [error, setError] = useState(null);
-  const mediaRecorderRef = useRef(null);
-  const chunksRef = useRef([]);
+  const recorderRef = useRef(null);
+  const streamRef = useRef(null);
   const timerRef = useRef(null);
 
   useEffect(() => {
-    return () => clearInterval(timerRef.current);
+    return () => {
+      clearInterval(timerRef.current);
+      stopStream();
+    };
   }, []);
+
+  const stopStream = () => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
+    }
+  };
 
   const startRecording = async () => {
     setError(null);
@@ -24,24 +35,31 @@ export default function AudioRecorder({ onRecordingComplete }) {
     }
 
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mediaRecorder = new MediaRecorder(stream, {
-        mimeType: MediaRecorder.isTypeSupported("audio/webm") ? "audio/webm" : "audio/ogg",
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          sampleRate: 16000,
+          channelCount: 1,
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
       });
-      mediaRecorderRef.current = mediaRecorder;
-      chunksRef.current = [];
 
-      mediaRecorder.ondataavailable = (e) => {
-        if (e.data.size > 0) chunksRef.current.push(e.data);
-      };
+      streamRef.current = stream;
 
-      mediaRecorder.onstop = () => {
-        const blob = new Blob(chunksRef.current, { type: mediaRecorder.mimeType });
-        onRecordingComplete(blob, mediaRecorder.mimeType);
-        stream.getTracks().forEach((t) => t.stop());
-      };
+      const recorder = new RecordRTC(stream, {
+        type: "audio",
+        mimeType: "audio/wav",
+        recorderType: RecordRTC.StereoAudioRecorder,
+        sampleRate: 16000,
+        desiredSampRate: 16000,
+        numberOfAudioChannels: 1,
+        timeSlice: 1000,
+      });
 
-      mediaRecorder.start(1000);
+      recorderRef.current = recorder;
+      recorder.startRecording();
+
       setRecording(true);
       setSeconds(0);
       timerRef.current = setInterval(() => setSeconds((s) => s + 1), 1000);
@@ -55,11 +73,17 @@ export default function AudioRecorder({ onRecordingComplete }) {
   };
 
   const stopRecording = () => {
-    if (mediaRecorderRef.current && recording) {
-      mediaRecorderRef.current.stop();
-      setRecording(false);
-      clearInterval(timerRef.current);
-    }
+    if (!recorderRef.current || !recording) return;
+
+    recorderRef.current.stopRecording(() => {
+      const blob = recorderRef.current.getBlob();
+      onRecordingComplete(blob, "audio/wav");
+      recorderRef.current = null;
+      stopStream();
+    });
+
+    setRecording(false);
+    clearInterval(timerRef.current);
   };
 
   const formatTime = (s) =>

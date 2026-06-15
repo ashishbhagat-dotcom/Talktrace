@@ -5,11 +5,19 @@ from typing import Optional
 
 import httpx
 from django.conf import settings
+from django.utils import timezone
 from pydantic import BaseModel, field_validator
 
 logger = logging.getLogger(__name__)
 
-EXTRACTION_PROMPT = """You are a CRM assistant. Analyze this conversation and return ONLY a JSON object with these exact fields. No markdown, no explanation, just raw JSON.
+
+def _build_extraction_prompt(raw_text: str) -> str:
+    today = timezone.localdate()
+    today_str = today.isoformat()
+    weekday_name = today.strftime("%A")
+    return f"""You are a CRM assistant. Analyze this conversation and return ONLY a JSON object with these exact fields. No markdown, no explanation, just raw JSON.
+
+TODAY IS {today_str} ({weekday_name}). Use this date to resolve relative date references like "tomorrow", "next Tuesday", "by Friday", "next week", etc. Always use the year {today.year} (or {today.year + 1} only if the resolved date has already passed in {today.year}).
 
 {{
   "summary": "2-3 sentence summary of the conversation",
@@ -20,7 +28,7 @@ EXTRACTION_PROMPT = """You are a CRM assistant. Analyze this conversation and re
   "sentiment": "one of: very_negative, negative, neutral, positive, very_positive",
   "sentiment_score": 0.0,
   "action_items": [
-    {{"description": "action to take", "due_date": "2025-12-31", "priority": "low|medium|high"}}
+    {{"description": "action to take", "due_date": "YYYY-MM-DD or null", "priority": "low|medium|high"}}
   ],
   "topics": ["topic1", "topic2"],
   "competitor_mentions": ["competitor_name"]
@@ -115,7 +123,7 @@ def _call_openai(raw_text: str) -> str:
             },
             {
                 "role": "user",
-                "content": EXTRACTION_PROMPT.format(raw_text=raw_text),
+                "content": _build_extraction_prompt(raw_text),
             },
         ],
         response_format={"type": "json_object"},
@@ -125,7 +133,7 @@ def _call_openai(raw_text: str) -> str:
 
 
 def _call_ollama(raw_text: str) -> str:
-    prompt = EXTRACTION_PROMPT.replace("{raw_text}", raw_text)
+    prompt = _build_extraction_prompt(raw_text)
     response = httpx.post(
         f"{settings.OLLAMA_URL}/api/generate",
         json={
@@ -151,8 +159,14 @@ def extract_structured_data(raw_text: str) -> dict:
 
             cleaned = _strip_markdown(raw_response)
             data = json.loads(cleaned)
-            result = ExtractionResult(**data)
-            return result.model_dump()
+            result = ExtractionResult(**data).model_dump()
+
+            # Resolve relative date phrases against today using dateparser
+            from apps.integrations.services.crm_extraction import _fix_action_item_dates
+            result["action_items"] = _fix_action_item_dates(
+                result.get("action_items", []), raw_text, timezone.localdate(),
+            )
+            return result
 
         except Exception as e:
             last_error = e
