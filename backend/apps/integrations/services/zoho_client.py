@@ -10,7 +10,15 @@ logger = logging.getLogger(__name__)
 
 ZOHO_ACCOUNTS_URL = getattr(settings, "ZOHO_ACCOUNTS_URL", "https://accounts.zoho.com")
 ZOHO_API_URL = getattr(settings, "ZOHO_API_URL", "https://www.zohoapis.com")
-SCOPES = "ZohoCRM.modules.Contacts.READ,ZohoCRM.modules.Leads.READ,ZohoCRM.modules.Notes.CREATE,ZohoCRM.modules.Tasks.CREATE,ZohoCRM.users.READ"
+SCOPES = ",".join([
+    "ZohoCRM.modules.Contacts.READ",
+    "ZohoCRM.modules.Leads.ALL",      # READ + CREATE for lead capture flow
+    "ZohoCRM.modules.Accounts.ALL",   # READ + CREATE for account capture flow
+    "ZohoCRM.modules.Notes.CREATE",
+    "ZohoCRM.modules.Tasks.CREATE",
+    "ZohoCRM.settings.fields.READ",   # field metadata (required fields, types)
+    "ZohoCRM.users.READ",
+])
 
 
 def get_auth_url(redirect_uri: str, state: str = "") -> str:
