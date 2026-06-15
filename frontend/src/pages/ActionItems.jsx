@@ -114,7 +114,7 @@ export default function ActionItems() {
                     <select
                       value={item.status}
                       onChange={(e) => update.mutate({ id: item.id, status: e.target.value })}
-                      className="text-xs border border-slate-200 rounded-lg px-2 py-1 bg-white"
+                      className="input-sm"
                     >
                       <option value="pending">Pending</option>
                       <option value="in_progress">In Progress</option>

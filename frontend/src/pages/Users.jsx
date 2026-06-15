@@ -182,7 +182,7 @@ function UserRow({ user, currentUserId }) {
       <td className="px-6 py-4">
         {editRole !== null ? (
           <select
-            className="text-xs border border-slate-300 rounded-lg px-2 py-1 bg-white"
+            className="input-sm"
             value={editRole}
             onChange={(e) => setEditRole(e.target.value)}
             onBlur={() => {

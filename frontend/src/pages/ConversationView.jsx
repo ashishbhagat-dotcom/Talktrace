@@ -196,7 +196,7 @@ export default function ConversationView() {
                 <select
                   value={item.status}
                   onChange={(e) => updateStatus.mutate({ itemId: item.id, status: e.target.value })}
-                  className="text-xs border border-slate-200 rounded-lg px-2 py-1 bg-white flex-shrink-0"
+                  className="input-sm flex-shrink-0"
                 >
                   <option value="pending">Pending</option>
                   <option value="in_progress">In Progress</option>

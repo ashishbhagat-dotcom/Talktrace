@@ -28,8 +28,28 @@
     @apply bg-white rounded-xl border border-slate-200 shadow-sm;
   }
   .input {
-    @apply block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm placeholder-slate-400 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20;
+    @apply block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm placeholder-slate-400 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20 disabled:bg-slate-50 disabled:text-slate-500;
   }
+
+  /* Custom select chevron + appearance reset — applies to <select> by tag so
+     every dropdown across the app picks it up without code changes. */
+  select.input,
+  select.input-sm {
+    @apply appearance-none bg-no-repeat bg-right pr-9 cursor-pointer;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'/></svg>");
+    background-position: right 0.65rem center;
+    background-size: 16px 16px;
+  }
+  select.input:focus,
+  select.input-sm:focus {
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%230891b2' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'/></svg>");
+  }
+
+  /* Compact variant for inline selects in tables/lists (Action Items, etc.) */
+  .input-sm {
+    @apply block rounded-lg border border-slate-300 bg-white px-2.5 py-1 text-xs placeholder-slate-400 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20;
+  }
+
   .label {
     @apply block text-sm font-medium text-slate-700 mb-1;
   }
