@@ -3,6 +3,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { CheckCircle2, ChevronLeft, Loader2, Sparkles, AlertCircle, ExternalLink } from "lucide-react";
 import toast from "react-hot-toast";
 import { getCrmDraft, updateCrmDraft, submitCrmDraft } from "../../api/integrations";
+import Select from "../ui/Select";
 
 export default function DraftReview({ draftId, onBack, onDone }) {
   const [fields, setFields] = useState(null);     // local editable copy
@@ -287,16 +288,14 @@ function FieldInput({ api, spec, value, onChange, required, confidence }) {
       </label>
 
       {spec.data_type === "picklist" ? (
-        <select
+        <Select
           value={value || ""}
-          onChange={(e) => onChange(e.target.value || null)}
-          className={baseInput}
-        >
-          <option value="">— Select —</option>
-          {(spec.picklist_values || []).map((v) => (
-            <option key={v} value={v}>{v}</option>
-          ))}
-        </select>
+          onChange={(v) => onChange(v || null)}
+          options={(spec.picklist_values || []).map((v) => ({ value: v, label: v }))}
+          placeholder="— Select —"
+          allowClear={!required}
+          invalid={isMissing}
+        />
       ) : spec.data_type === "textarea" ? (
         <textarea
           value={value || ""}

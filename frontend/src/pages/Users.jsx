@@ -3,6 +3,18 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { UserPlus, Loader2, ShieldCheck, User, Users as UsersIcon } from "lucide-react";
 import { getUsers, createUser, updateUser, deactivateUser, activateUser } from "../api/users";
 import useAuthStore from "../store/authStore";
+import Select from "../components/ui/Select";
+
+const ROLE_OPTIONS = [
+  { value: "member", label: "Member — can create and view conversations" },
+  { value: "manager", label: "Manager — can manage team conversations" },
+  { value: "admin", label: "Admin — full access including user management" },
+];
+const ROLE_OPTIONS_COMPACT = [
+  { value: "member", label: "Member" },
+  { value: "manager", label: "Manager" },
+  { value: "admin", label: "Admin" },
+];
 import toast from "react-hot-toast";
 import { formatDate } from "../utils/formatters";
 
@@ -98,15 +110,11 @@ function CreateUserModal({ onClose }) {
             />
           </FormField>
           <FormField label="Role" error={fieldErrors.role}>
-            <select
-              className="input"
+            <Select
               value={form.role}
-              onChange={(e) => setForm({ ...form, role: e.target.value })}
-            >
-              <option value="member">Member — can create and view conversations</option>
-              <option value="manager">Manager — can manage team conversations</option>
-              <option value="admin">Admin — full access including user management</option>
-            </select>
+              onChange={(v) => setForm({ ...form, role: v })}
+              options={ROLE_OPTIONS}
+            />
           </FormField>
           <FormField label="Password" error={fieldErrors.password}>
             <input
@@ -181,20 +189,16 @@ function UserRow({ user, currentUserId }) {
       </td>
       <td className="px-6 py-4">
         {editRole !== null ? (
-          <select
-            className="input-sm"
+          <Select
+            size="sm"
             value={editRole}
-            onChange={(e) => setEditRole(e.target.value)}
-            onBlur={() => {
-              if (editRole !== user.role) updateRole.mutate(editRole);
+            options={ROLE_OPTIONS_COMPACT}
+            onChange={(v) => {
+              setEditRole(v);
+              if (v !== user.role) updateRole.mutate(v);
               else setEditRole(null);
             }}
-            autoFocus
-          >
-            <option value="member">Member</option>
-            <option value="manager">Manager</option>
-            <option value="admin">Admin</option>
-          </select>
+          />
         ) : (
           <button
             onClick={() => !isSelf && setEditRole(user.role)}

@@ -6,8 +6,16 @@ import { getConversation } from "../api/conversations";
 import { updateActionItem } from "../api/actionItems";
 import SentimentBadge from "../components/conversations/SentimentBadge";
 import AIProcessingStatus from "../components/conversations/AIProcessingStatus";
+import Select from "../components/ui/Select";
 import { formatDate, formatDateTime, conversationTypeLabel } from "../utils/formatters";
 import toast from "react-hot-toast";
+
+const STATUS_OPTIONS = [
+  { value: "pending", label: "Pending" },
+  { value: "in_progress", label: "In Progress" },
+  { value: "completed", label: "Completed" },
+  { value: "cancelled", label: "Cancelled" },
+];
 
 function CollapsibleSection({ title, content }) {
   const [open, setOpen] = useState(true);
@@ -193,16 +201,14 @@ export default function ConversationView() {
                     )}
                   </div>
                 </div>
-                <select
-                  value={item.status}
-                  onChange={(e) => updateStatus.mutate({ itemId: item.id, status: e.target.value })}
-                  className="input-sm flex-shrink-0"
-                >
-                  <option value="pending">Pending</option>
-                  <option value="in_progress">In Progress</option>
-                  <option value="completed">Completed</option>
-                  <option value="cancelled">Cancelled</option>
-                </select>
+                <div className="flex-shrink-0">
+                  <Select
+                    size="sm"
+                    value={item.status}
+                    onChange={(v) => updateStatus.mutate({ itemId: item.id, status: v })}
+                    options={STATUS_OPTIONS}
+                  />
+                </div>
               </div>
             ))}
           </div>

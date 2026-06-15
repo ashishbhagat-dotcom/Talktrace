@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { Search, Building2, Mail, Phone, ExternalLink } from "lucide-react";
 import { getCustomers } from "../api/customers";
+import Select from "../components/ui/Select";
 
 const TYPE_STYLES = {
   lead: "bg-yellow-100 text-yellow-700",
@@ -79,8 +80,8 @@ export default function Customers() {
     setPage(1);
   };
 
-  const handleType = (e) => {
-    setType(e.target.value);
+  const handleType = (v) => {
+    setType(v || "");
     setPage(1);
   };
 
@@ -107,12 +108,19 @@ export default function Customers() {
             className="input pl-9 w-full"
           />
         </div>
-        <select value={type} onChange={handleType} className="input w-40">
-          <option value="">All types</option>
-          <option value="lead">Lead</option>
-          <option value="contact">Contact</option>
-          <option value="account">Account</option>
-        </select>
+        <div className="w-40">
+          <Select
+            value={type}
+            onChange={handleType}
+            placeholder="All types"
+            allowClear
+            options={[
+              { value: "lead", label: "Lead" },
+              { value: "contact", label: "Contact" },
+              { value: "account", label: "Account" },
+            ]}
+          />
+        </div>
       </div>
 
       {/* Grid */}

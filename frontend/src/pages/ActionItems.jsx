@@ -3,6 +3,14 @@ import { Link } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { AlertCircle, Clock, CheckCircle } from "lucide-react";
 import { getActionItems, getMyActionItems, getOverdueActionItems, updateActionItem } from "../api/actionItems";
+import Select from "../components/ui/Select";
+
+const STATUS_OPTIONS = [
+  { value: "pending", label: "Pending" },
+  { value: "in_progress", label: "In Progress" },
+  { value: "completed", label: "Completed" },
+  { value: "cancelled", label: "Cancelled" },
+];
 import { formatDate } from "../utils/formatters";
 import toast from "react-hot-toast";
 
@@ -111,16 +119,12 @@ export default function ActionItems() {
                     <span className={`badge ${PRIORITY_COLORS[item.priority] || ""}`}>
                       {item.priority}
                     </span>
-                    <select
+                    <Select
+                      size="sm"
                       value={item.status}
-                      onChange={(e) => update.mutate({ id: item.id, status: e.target.value })}
-                      className="input-sm"
-                    >
-                      <option value="pending">Pending</option>
-                      <option value="in_progress">In Progress</option>
-                      <option value="completed">Completed</option>
-                      <option value="cancelled">Cancelled</option>
-                    </select>
+                      onChange={(v) => update.mutate({ id: item.id, status: v })}
+                      options={STATUS_OPTIONS}
+                    />
                   </div>
                 </div>
               );
