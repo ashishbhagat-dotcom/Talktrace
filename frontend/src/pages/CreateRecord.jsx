@@ -1,7 +1,10 @@
 import { useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { UserPlus, Building2, ChevronLeft, Loader2, Mic, Type, FileText, Trash2 } from "lucide-react";
+import { UserPlus, Building2, ChevronLeft, Loader2, Mic, Type, FileText, Trash2, Upload, FileAudio } from "lucide-react";
+
+const ACCEPTED_AUDIO = ".mp3,.wav,.m4a,.aac,.ogg,.webm,.flac,audio/*";
+const MAX_AUDIO_BYTES = 50 * 1024 * 1024; // 50 MB
 import toast from "react-hot-toast";
 import { createCrmDraft, listCrmDrafts, deleteCrmDraft } from "../api/integrations";
 import AudioRecorder from "../components/conversations/AudioRecorder";
@@ -34,10 +37,11 @@ export default function CreateRecord() {
   const [recordType, setRecordType] = useState(null);
   const [draftId, setDraftId] = useState(initialDraftId);
 
-  const [inputMode, setInputMode] = useState("text"); // text | voice
+  const [inputMode, setInputMode] = useState("text"); // text | voice | upload
   const [rawText, setRawText] = useState("");
   const [audioBlob, setAudioBlob] = useState(null);
   const [audioMime, setAudioMime] = useState(null);
+  const [uploadFile, setUploadFile] = useState(null);
 
   const draftsQuery = useQuery({
     queryKey: ["crm-drafts-list"],
@@ -69,6 +73,8 @@ export default function CreateRecord() {
       if (inputMode === "voice" && audioBlob) {
         const ext = audioMime?.includes("webm") ? "webm" : "wav";
         fd.append("audio", audioBlob, `recording.${ext}`);
+      } else if (inputMode === "upload" && uploadFile) {
+        fd.append("audio", uploadFile, uploadFile.name);
       } else {
         fd.append("raw_text", rawText.trim());
       }
@@ -88,6 +94,7 @@ export default function CreateRecord() {
   const canSubmit = (() => {
     if (inputMode === "text") return rawText.trim().length > 10;
     if (inputMode === "voice") return !!audioBlob;
+    if (inputMode === "upload") return !!uploadFile;
     return false;
   })();
 
@@ -111,6 +118,7 @@ export default function CreateRecord() {
           setRawText("");
           setAudioBlob(null);
           setAudioMime(null);
+          setUploadFile(null);
           queryClient.invalidateQueries({ queryKey: ["crm-drafts-list"] });
         }}
       />
@@ -230,6 +238,7 @@ export default function CreateRecord() {
           <div className="flex gap-1 border-b border-slate-200">
             <ModeTab active={inputMode === "text"} onClick={() => setInputMode("text")} icon={Type} label="Type" />
             <ModeTab active={inputMode === "voice"} onClick={() => setInputMode("voice")} icon={Mic} label="Record" />
+            <ModeTab active={inputMode === "upload"} onClick={() => setInputMode("upload")} icon={Upload} label="Upload audio" />
           </div>
 
           {inputMode === "text" && (
@@ -260,6 +269,10 @@ export default function CreateRecord() {
                 </p>
               )}
             </div>
+          )}
+
+          {inputMode === "upload" && (
+            <AudioUploadField file={uploadFile} setFile={setUploadFile} />
           )}
 
           <div className="flex justify-end pt-2">
@@ -351,6 +364,82 @@ function DraftsList({ drafts, onResume, onDelete }) {
           );
         })}
       </div>
+    </div>
+  );
+}
+
+function AudioUploadField({ file, setFile }) {
+  const [error, setError] = useState(null);
+  const [dragOver, setDragOver] = useState(false);
+
+  const accept = (f) => {
+    setError(null);
+    if (!f) return;
+    if (!f.type.startsWith("audio/") && !/\.(mp3|wav|m4a|aac|ogg|webm|flac)$/i.test(f.name)) {
+      setError("That doesn't look like an audio file. Supported: MP3, WAV, M4A, AAC, OGG, WebM, FLAC.");
+      return;
+    }
+    if (f.size > MAX_AUDIO_BYTES) {
+      setError(`File too large (${Math.round(f.size / 1024 / 1024)} MB). Maximum is 50 MB.`);
+      return;
+    }
+    setFile(f);
+  };
+
+  return (
+    <div>
+      <label className="label">Upload customer conversation audio</label>
+
+      <label
+        onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+        onDragLeave={() => setDragOver(false)}
+        onDrop={(e) => {
+          e.preventDefault();
+          setDragOver(false);
+          accept(e.dataTransfer.files?.[0]);
+        }}
+        className={
+          "flex flex-col items-center justify-center gap-2 border-2 border-dashed rounded-xl py-8 px-4 cursor-pointer transition-colors " +
+          (dragOver
+            ? "border-brand-500 bg-brand-50"
+            : "border-slate-300 hover:border-brand-400 hover:bg-slate-50")
+        }
+      >
+        <input
+          type="file"
+          accept={ACCEPTED_AUDIO}
+          onChange={(e) => accept(e.target.files?.[0])}
+          className="hidden"
+        />
+        <FileAudio size={32} className="text-slate-400" />
+        <div className="text-center">
+          <p className="text-sm text-slate-700 font-medium">
+            {file ? file.name : "Drag & drop or click to choose an audio file"}
+          </p>
+          <p className="text-xs text-slate-500 mt-0.5">
+            {file
+              ? `${(file.size / 1024 / 1024).toFixed(1)} MB · ${file.type || "audio"}`
+              : "MP3, WAV, M4A, AAC, OGG, WebM, FLAC — up to 50 MB"}
+          </p>
+        </div>
+        {file && (
+          <button
+            type="button"
+            onClick={(e) => { e.preventDefault(); e.stopPropagation(); setFile(null); }}
+            className="text-xs text-slate-500 hover:text-red-600 underline mt-1"
+          >
+            Choose a different file
+          </button>
+        )}
+      </label>
+
+      {error && <p className="text-xs text-red-600 mt-2">{error}</p>}
+
+      {file && !error && (
+        <p className="text-xs text-green-600 mt-2">
+          ✓ Ready. After submit, the audio will be transcribed and analyzed with AI.
+        </p>
+      )}
     </div>
   );
 }

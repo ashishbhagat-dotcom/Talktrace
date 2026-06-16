@@ -137,24 +137,58 @@ def complete_pipeline(self, conversation_id: str):
         push_conversation_to_zoho.delay(conversation_id, str(conversation.created_by_id))
 
 
-def trigger_ai_pipeline(conversation_id: str, attachment_id: str = None):
+@shared_task(bind=True, name="conversations.mark_transcribed")
+def mark_transcribed(self, conversation_id: str):
+    """Set ai_status to 'transcribed' so the user can review the transcript
+    before the extraction chain runs."""
+    from .models import Conversation
+    Conversation.objects.filter(id=conversation_id).update(ai_status="transcribed")
+    logger.info(f"Conversation {conversation_id} transcribed; waiting for user review")
+
+
+def trigger_transcription(conversation_id: str, attachment_id: str):
+    """Audio path step 1: transcribe and pause. User reviews transcript,
+    then calls trigger_extraction() to run the rest of the pipeline.
+    """
     from .models import Conversation
 
-    Conversation.objects.filter(id=conversation_id).update(ai_status="pending")
+    Conversation.objects.filter(id=conversation_id).update(ai_status="transcribing")
 
-    tasks = []
-    if attachment_id:
-        tasks.append(transcribe_audio.si(conversation_id, attachment_id))
+    pipeline = chain(
+        transcribe_audio.si(conversation_id, attachment_id),
+        mark_transcribed.si(conversation_id),
+    )
+    pipeline.apply_async(
+        link_error=mark_pipeline_failed.s(conversation_id=conversation_id),
+    )
+    logger.info(f"Transcription triggered for conversation {conversation_id}")
 
-    tasks.extend([
+
+def trigger_extraction(conversation_id: str):
+    """Run the AI extraction chain on an existing transcript. Used both for
+    text-input conversations and for the post-transcript-review audio path.
+    """
+    from .models import Conversation
+
+    Conversation.objects.filter(id=conversation_id).update(ai_status="processing")
+
+    pipeline = chain(
         extract_with_llm.si(conversation_id),
         generate_embedding.si(conversation_id),
         index_in_elasticsearch.si(conversation_id),
         complete_pipeline.si(conversation_id),
-    ])
-
-    pipeline = chain(*tasks)
+    )
     pipeline.apply_async(
         link_error=mark_pipeline_failed.s(conversation_id=conversation_id),
     )
-    logger.info(f"AI pipeline triggered for conversation {conversation_id}")
+    logger.info(f"AI extraction triggered for conversation {conversation_id}")
+
+
+def trigger_ai_pipeline(conversation_id: str, attachment_id: str = None):
+    """Legacy single-shot entry. Routes audio through the two-step flow
+    (transcribe → wait for review) and text through extraction directly.
+    """
+    if attachment_id:
+        trigger_transcription(conversation_id, attachment_id)
+    else:
+        trigger_extraction(conversation_id)

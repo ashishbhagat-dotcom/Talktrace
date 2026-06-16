@@ -22,10 +22,16 @@ export default function AIProcessingStatus({ conversationId, hasAudio }) {
         const { data } = await getConversationStatus(conversationId);
         if (cancelled) return;
         setStatus(data.ai_status);
-        if (data.ai_status === "processing") {
-          // stop at second-to-last so the final "Preparing results…" step
-          // stays spinning until the parent unmounts this component
-          setCurrentStep((s) => Math.min(s + 1, STEPS.length - 2));
+        if (data.ai_status === "transcribing") {
+          setCurrentStep(0); // "Transcribing audio..." active
+        } else if (data.ai_status === "processing") {
+          // If we have audio but never showed the transcribing step (user
+          // clicked Analyze after reviewing transcript), jump past it.
+          setCurrentStep((s) => {
+            const minStep = hasAudio ? 1 : 0; // skip Transcribing step
+            const next = Math.max(s, minStep) + 1;
+            return Math.min(next, STEPS.length - 2);
+          });
         }
       } catch {
         // parent query will handle refetching
@@ -38,7 +44,7 @@ export default function AIProcessingStatus({ conversationId, hasAudio }) {
       cancelled = true;
       clearInterval(interval);
     };
-  }, [conversationId]);
+  }, [conversationId, hasAudio]);
 
   const steps = hasAudio ? STEPS : STEPS.slice(1);
 

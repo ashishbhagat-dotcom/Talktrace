@@ -17,5 +17,6 @@ urlpatterns = [
     # Lead/Account creation from conversation (CRMDraft flow)
     path("crm-drafts/", views.crm_drafts, name="crm-drafts"),
     path("crm-drafts/<uuid:draft_id>/", views.crm_draft_detail, name="crm-draft-detail"),
+    path("crm-drafts/<uuid:draft_id>/extract/", views.crm_draft_extract, name="crm-draft-extract"),
     path("crm-drafts/<uuid:draft_id>/submit/", views.crm_draft_submit, name="crm-draft-submit"),
 ]

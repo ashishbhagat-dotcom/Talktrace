@@ -118,24 +118,69 @@ def _pick_credential_for_user(user_id):
     return cred
 
 
+@shared_task(name="integrations.transcribe_crm_draft", bind=True, max_retries=2)
+def transcribe_crm_draft(self, draft_id: str):
+    """Transcribe a CRMDraft's audio attachment. Stops at TRANSCRIBED so the
+    user can review/edit the transcript before kicking off extraction.
+
+    If the draft already has raw_text (text input), skips transcription and
+    triggers extraction directly.
+    """
+    from .models import CRMDraft
+
+    try:
+        draft = CRMDraft.objects.select_related("attachment", "created_by").get(id=draft_id)
+
+        # Pure text input: skip transcription, go straight to extraction
+        if draft.raw_text and not draft.attachment_id:
+            extract_crm_draft.delay(draft_id)
+            return
+
+        if not draft.attachment_id:
+            draft.status = CRMDraft.Status.FAILED
+            draft.error_message = "No audio attachment or text to process."
+            draft.save(update_fields=["status", "error_message", "updated_at"])
+            return
+
+        draft.status = CRMDraft.Status.TRANSCRIBING
+        draft.save(update_fields=["status", "updated_at"])
+
+        from apps.conversations.services.transcription_service import transcribe_attachment
+        transcript = transcribe_attachment(draft.attachment)
+
+        if not (transcript or "").strip():
+            draft.status = CRMDraft.Status.FAILED
+            draft.error_message = "Transcription returned empty text. The audio may be silent or unclear."
+            draft.save(update_fields=["status", "error_message", "updated_at"])
+            return
+
+        draft.raw_text = transcript
+        draft.status = CRMDraft.Status.TRANSCRIBED
+        draft.error_message = ""
+        draft.save(update_fields=["raw_text", "status", "error_message", "updated_at"])
+
+        logger.info(f"CRMDraft {draft_id} transcription complete: {len(transcript)} chars")
+    except Exception as exc:
+        logger.error(f"CRMDraft transcription failed for {draft_id}: {exc}")
+        from .models import CRMDraft as _CRMDraft
+        _CRMDraft.objects.filter(id=draft_id).update(
+            status=_CRMDraft.Status.FAILED,
+            error_message=str(exc)[:500],
+        )
+        raise self.retry(exc=exc, countdown=30)
+
+
 @shared_task(name="integrations.extract_crm_draft", bind=True, max_retries=2)
 def extract_crm_draft(self, draft_id: str):
-    """Run transcription (if audio) and AI field extraction for a CRMDraft."""
+    """Run AI field extraction on a CRMDraft's raw_text."""
     from .models import CRMDraft
     from .services.crm_extraction import extract_crm_fields
     from .services.zoho_fields import get_schema, module_for_record_type
 
     try:
-        draft = CRMDraft.objects.select_related("attachment", "created_by").get(id=draft_id)
+        draft = CRMDraft.objects.select_related("created_by").get(id=draft_id)
         draft.status = CRMDraft.Status.EXTRACTING
         draft.save(update_fields=["status", "updated_at"])
-
-        # Transcribe audio if attached and raw_text is empty
-        if draft.attachment and not draft.raw_text:
-            from apps.conversations.services.transcription_service import transcribe_attachment
-            transcript = transcribe_attachment(draft.attachment)
-            draft.raw_text = transcript
-            draft.save(update_fields=["raw_text", "updated_at"])
 
         if not draft.raw_text:
             draft.status = CRMDraft.Status.FAILED

@@ -20,3 +20,6 @@ export const uploadVoice = (formData, onUploadProgress) =>
     headers: { "Content-Type": "multipart/form-data" },
     onUploadProgress,
   });
+
+export const analyzeConversation = (id, rawText) =>
+  client.post(`/conversations/${id}/analyze/`, rawText != null ? { raw_text: rawText } : {});

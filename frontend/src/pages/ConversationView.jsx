@@ -1,8 +1,8 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { ChevronDown, ChevronRight, CheckCircle, Clock, AlertCircle } from "lucide-react";
-import { getConversation } from "../api/conversations";
+import { ChevronDown, ChevronRight, CheckCircle, Clock, AlertCircle, Sparkles, Loader2 } from "lucide-react";
+import { getConversation, analyzeConversation } from "../api/conversations";
 import { updateActionItem } from "../api/actionItems";
 import SentimentBadge from "../components/conversations/SentimentBadge";
 import AIProcessingStatus from "../components/conversations/AIProcessingStatus";
@@ -73,6 +73,7 @@ export default function ConversationView() {
   if (!conversation) return <div className="text-slate-500">Conversation not found</div>;
 
   const aiDone = conversation.ai_status === "completed";
+  const transcriptReviewMode = conversation.ai_status === "transcribed";
 
   return (
     <div className="max-w-6xl mx-auto space-y-6">
@@ -95,15 +96,21 @@ export default function ConversationView() {
         {aiDone && <SentimentBadge sentiment={conversation.sentiment} score={conversation.sentiment_score} />}
       </div>
 
-      {/* AI Processing */}
-      {conversation.ai_status !== "completed" && (
+      {/* Transcript review (after audio transcription, before AI extraction) */}
+      {transcriptReviewMode && (
+        <TranscriptReview conversation={conversation} />
+      )}
+
+      {/* AI Processing spinner — shown during transcription or extraction */}
+      {!transcriptReviewMode && conversation.ai_status !== "completed" && (
         <AIProcessingStatus
           conversationId={id}
           hasAudio={conversation.attachments?.length > 0}
         />
       )}
 
-      {/* Main content grid */}
+      {/* Main content grid — hidden during transcript review */}
+      {!transcriptReviewMode && (
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Left: Raw text */}
         <div className="card p-6">
@@ -172,9 +179,10 @@ export default function ConversationView() {
           )}
         </div>
       </div>
+      )}
 
       {/* Action Items */}
-      {conversation.action_items?.length > 0 && (
+      {!transcriptReviewMode && conversation.action_items?.length > 0 && (
         <div className="card">
           <div className="px-6 py-4 border-b border-slate-100">
             <h2 className="font-semibold text-slate-800">
@@ -214,6 +222,74 @@ export default function ConversationView() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function TranscriptReview({ conversation }) {
+  const queryClient = useQueryClient();
+  const [transcript, setTranscript] = useState(conversation.raw_text || "");
+
+  // Sync editor when conversation data refreshes (e.g., transcript just arrived)
+  useEffect(() => {
+    setTranscript(conversation.raw_text || "");
+  }, [conversation.id, conversation.raw_text]);
+
+  const analyzeMutation = useMutation({
+    mutationFn: () => analyzeConversation(conversation.id, transcript),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["conversation", conversation.id] });
+      toast.success("AI analysis started");
+    },
+    onError: (err) => {
+      toast.error(err.response?.data?.error || "Couldn't start analysis");
+    },
+  });
+
+  const wordCount = transcript.trim().split(/\s+/).filter(Boolean).length;
+  const empty = transcript.trim().length === 0;
+
+  return (
+    <div className="card p-6 space-y-3">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h2 className="font-semibold text-slate-800 flex items-center gap-2">
+            Review transcript
+          </h2>
+          <p className="text-sm text-slate-500 mt-0.5">
+            Whisper transcribed your audio. Fix any misheard names, emails, or numbers — better transcript means better AI extraction.
+          </p>
+        </div>
+        <span className="text-xs text-slate-400 shrink-0 mt-1">
+          {wordCount} words · {transcript.length} chars
+        </span>
+      </div>
+
+      <textarea
+        value={transcript}
+        onChange={(e) => setTranscript(e.target.value)}
+        rows={14}
+        className="input font-mono text-sm leading-relaxed"
+        placeholder="Empty transcript — Whisper couldn't extract any text from the audio."
+      />
+
+      <div className="flex justify-between items-center pt-2 border-t border-slate-100">
+        <span className="text-xs text-slate-400">
+          {empty ? "Add some text to enable analysis" : "Ready to extract insights"}
+        </span>
+        <button
+          onClick={() => analyzeMutation.mutate()}
+          disabled={analyzeMutation.isPending || empty}
+          className="btn-primary flex items-center gap-2"
+        >
+          {analyzeMutation.isPending ? (
+            <Loader2 size={15} className="animate-spin" />
+          ) : (
+            <Sparkles size={15} />
+          )}
+          Analyze with AI
+        </button>
+      </div>
     </div>
   );
 }

@@ -245,7 +245,20 @@ SPECTACULAR_SETTINGS = {
 DATA_UPLOAD_MAX_MEMORY_SIZE = 52428800   # 50 MB
 FILE_UPLOAD_MAX_MEMORY_SIZE = 52428800   # 50 MB
 AUDIO_UPLOAD_MAX_SIZE = 52428800         # 50 MB
-ALLOWED_AUDIO_TYPES = ["audio/mpeg", "audio/wav", "audio/mp4", "audio/ogg", "audio/webm"]
+ALLOWED_AUDIO_TYPES = [
+    "audio/mpeg",       # MP3
+    "audio/mp3",        # MP3 (alt)
+    "audio/wav",        # WAV
+    "audio/wave",       # WAV (alt)
+    "audio/x-wav",      # WAV (alt)
+    "audio/mp4",        # M4A
+    "audio/x-m4a",      # M4A (alt)
+    "audio/aac",        # AAC
+    "audio/x-aac",      # AAC (alt)
+    "audio/ogg",        # OGG
+    "audio/webm",       # WebM (browser recordings)
+    "audio/flac",       # FLAC (bonus)
+]
 
 # ─── Zoho CRM Integration ─────────────────────────────────────────────────────
 ZOHO_CLIENT_ID = os.environ.get("ZOHO_CLIENT_ID", "")

@@ -1,12 +1,15 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Loader2, Phone, Users, Video, MessageCircle, Mail, MoreHorizontal, Search, ChevronLeft } from "lucide-react";
+import { Loader2, Phone, Users, Video, MessageCircle, Mail, MoreHorizontal, Search, ChevronLeft, Upload, FileAudio } from "lucide-react";
 import toast from "react-hot-toast";
 import { createConversation, uploadVoice } from "../api/conversations";
 import { getGmailStatus, searchGmailThreads, getGmailThread, importGmailThread } from "../api/integrations";
 import CustomerSearch from "../components/customers/CustomerSearch";
 import AudioRecorder from "../components/conversations/AudioRecorder";
+
+const ACCEPTED_AUDIO = ".mp3,.wav,.m4a,.aac,.ogg,.webm,.flac,audio/*";
+const MAX_AUDIO_BYTES = 50 * 1024 * 1024; // 50 MB
 
 const TYPES = [
   { value: "phone_call", label: "Phone Call", icon: Phone },
@@ -30,6 +33,8 @@ export default function NewConversation() {
   const [rawText, setRawText] = useState("");
   const [audioBlob, setAudioBlob] = useState(null);
   const [audioMime, setAudioMime] = useState(null);
+  const [uploadFile, setUploadFile] = useState(null);
+  const [uploadError, setUploadError] = useState(null);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [loading, setLoading] = useState(false);
 
@@ -97,6 +102,8 @@ export default function NewConversation() {
       toast.error("Please enter conversation notes"); return;
     } else if (activeTab === "voice" && !audioBlob) {
       toast.error("Please record audio first"); return;
+    } else if (activeTab === "upload" && !uploadFile) {
+      toast.error("Please choose an audio file to upload"); return;
     }
 
     setLoading(true);
@@ -111,10 +118,14 @@ export default function NewConversation() {
           interaction_date: new Date(interactionDate).toISOString(),
         });
         conversation = data;
-      } else if (activeTab === "voice") {
+      } else if (activeTab === "voice" || activeTab === "upload") {
         const formData = new FormData();
-        const ext = audioMime?.includes("webm") ? "webm" : "ogg";
-        formData.append("audio", audioBlob, `recording.${ext}`);
+        if (activeTab === "voice") {
+          const ext = audioMime?.includes("webm") ? "webm" : "ogg";
+          formData.append("audio", audioBlob, `recording.${ext}`);
+        } else {
+          formData.append("audio", uploadFile, uploadFile.name);
+        }
         formData.append("customer_id", customer.id);
         formData.append("conversation_type", convType);
         formData.append("interaction_date", new Date(interactionDate).toISOString());
@@ -146,10 +157,10 @@ export default function NewConversation() {
 
   // Determine which tabs to show in Step 3
   const tabs = convType === "email" && gmailConnected
-    ? ["text", "voice", "gmail"]
-    : ["text", "voice"];
+    ? ["text", "voice", "upload", "gmail"]
+    : ["text", "voice", "upload"];
 
-  const tabLabels = { text: "Text Notes", voice: "Voice Recording", gmail: "Gmail Thread" };
+  const tabLabels = { text: "Text Notes", voice: "Voice Recording", upload: "Upload Audio", gmail: "Gmail Thread" };
 
   return (
     <div className="max-w-2xl mx-auto">
@@ -265,6 +276,25 @@ export default function NewConversation() {
             </div>
           )}
 
+          {activeTab === "upload" && (
+            <div>
+              <UploadAudioDropzone
+                file={uploadFile}
+                setFile={(f) => { setUploadFile(f); setUploadError(null); }}
+                error={uploadError}
+                setError={setUploadError}
+              />
+              {uploadProgress > 0 && uploadProgress < 100 && (
+                <div className="mt-3">
+                  <div className="h-1.5 bg-slate-200 rounded-full overflow-hidden">
+                    <div className="h-full bg-brand-500 transition-all" style={{ width: `${uploadProgress}%` }} />
+                  </div>
+                  <p className="text-xs text-slate-500 mt-1">Uploading... {uploadProgress}%</p>
+                </div>
+              )}
+            </div>
+          )}
+
           {activeTab === "gmail" && (
             <div>
               {selectedThread ? (
@@ -370,6 +400,75 @@ export default function NewConversation() {
           </button>
         </div>
       </form>
+    </div>
+  );
+}
+
+function UploadAudioDropzone({ file, setFile, error, setError }) {
+  const [dragOver, setDragOver] = useState(false);
+
+  const accept = (f) => {
+    setError(null);
+    if (!f) return;
+    if (!f.type.startsWith("audio/") && !/\.(mp3|wav|m4a|aac|ogg|webm|flac)$/i.test(f.name)) {
+      setError("That doesn't look like an audio file. Supported: MP3, WAV, M4A, AAC, OGG, WebM, FLAC.");
+      return;
+    }
+    if (f.size > MAX_AUDIO_BYTES) {
+      setError(`File too large (${Math.round(f.size / 1024 / 1024)} MB). Maximum is 50 MB.`);
+      return;
+    }
+    setFile(f);
+  };
+
+  return (
+    <div>
+      <label
+        onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+        onDragLeave={() => setDragOver(false)}
+        onDrop={(e) => {
+          e.preventDefault();
+          setDragOver(false);
+          accept(e.dataTransfer.files?.[0]);
+        }}
+        className={
+          "flex flex-col items-center justify-center gap-2 border-2 border-dashed rounded-xl py-8 px-4 cursor-pointer transition-colors " +
+          (dragOver ? "border-brand-500 bg-brand-50" : "border-slate-300 hover:border-brand-400 hover:bg-slate-50")
+        }
+      >
+        <input
+          type="file"
+          accept={ACCEPTED_AUDIO}
+          onChange={(e) => accept(e.target.files?.[0])}
+          className="hidden"
+        />
+        <FileAudio size={32} className="text-slate-400" />
+        <div className="text-center">
+          <p className="text-sm text-slate-700 font-medium">
+            {file ? file.name : "Drag & drop or click to choose an audio file"}
+          </p>
+          <p className="text-xs text-slate-500 mt-0.5">
+            {file
+              ? `${(file.size / 1024 / 1024).toFixed(1)} MB · ${file.type || "audio"}`
+              : "MP3, WAV, M4A, AAC, OGG, WebM, FLAC — up to 50 MB"}
+          </p>
+        </div>
+        {file && (
+          <button
+            type="button"
+            onClick={(e) => { e.preventDefault(); e.stopPropagation(); setFile(null); }}
+            className="text-xs text-slate-500 hover:text-red-600 underline mt-1"
+          >
+            Choose a different file
+          </button>
+        )}
+      </label>
+      {error && <p className="text-xs text-red-600 mt-2">{error}</p>}
+      {file && !error && (
+        <p className="text-xs text-green-600 mt-2">
+          ✓ Ready. After submit, the audio will be transcribed and analyzed with AI.
+        </p>
+      )}
     </div>
   );
 }

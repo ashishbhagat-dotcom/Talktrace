@@ -68,6 +68,40 @@ class ConversationViewSet(viewsets.ModelViewSet):
         conversation = self.get_object()
         return Response(ConversationStatusSerializer(conversation).data)
 
+    @action(detail=True, methods=["post"], url_path="analyze")
+    def analyze(self, request, pk=None):
+        """Kick off the extraction pipeline. Used after the user reviews the
+        Whisper transcript on an audio-sourced conversation. Optionally
+        accepts an updated `raw_text` so user edits to the transcript are saved.
+        """
+        from .tasks import trigger_extraction
+        conversation = self.get_object()
+
+        if conversation.ai_status not in (
+            Conversation.AIStatus.TRANSCRIBED,
+            Conversation.AIStatus.FAILED,
+            Conversation.AIStatus.PENDING,
+        ):
+            return Response(
+                {"error": f"Cannot analyze from status '{conversation.ai_status}'."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        new_text = request.data.get("raw_text")
+        if new_text is not None:
+            conversation.raw_text = new_text
+            conversation.save(update_fields=["raw_text", "updated_at"])
+
+        if not (conversation.raw_text or "").strip():
+            return Response(
+                {"error": "Transcript is empty. Add text first."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        trigger_extraction(str(conversation.id))
+        conversation.refresh_from_db()
+        return Response(ConversationStatusSerializer(conversation).data)
+
     @action(detail=False, methods=["post"], url_path="from-gmail")
     def import_from_gmail(self, request):
         from apps.integrations.models import GmailCredential

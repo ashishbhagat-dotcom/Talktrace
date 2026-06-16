@@ -261,7 +261,7 @@ def crm_drafts(request):
     from apps.conversations.models import Attachment
     from .models import CRMDraft
     from .serializers import CRMDraftCreateSerializer, CRMDraftSerializer
-    from .tasks import extract_crm_draft
+    from .tasks import transcribe_crm_draft
 
     if request.method == "GET":
         qs = CRMDraft.objects.filter(created_by=request.user).order_by("-created_at")
@@ -306,7 +306,9 @@ def crm_drafts(request):
         attachment_id=data.get("attachment_id"),
         status=CRMDraft.Status.PENDING,
     )
-    extract_crm_draft.delay(str(draft.id))
+    # Audio path → transcribe + stop for review.
+    # Text path → goes straight to extraction (handled inside the task).
+    transcribe_crm_draft.delay(str(draft.id))
     return Response(CRMDraftSerializer(draft).data, status=status.HTTP_201_CREATED)
 
 
@@ -344,6 +346,45 @@ def crm_draft_detail(request, draft_id):
     update_ser = CRMDraftUpdateSerializer(data=request.data)
     update_ser.is_valid(raise_exception=True)
     update_ser.update(draft, update_ser.validated_data)
+    return Response(CRMDraftSerializer(draft).data)
+
+
+@api_view(["POST"])
+@permission_classes([permissions.IsAuthenticated])
+def crm_draft_extract(request, draft_id):
+    """Kick off AI field extraction on a draft.
+
+    Allowed when status is 'transcribed' (user reviewed transcript) or
+    'failed' (retry). Optionally accepts an updated `raw_text` in the body
+    so any edits the user made to the transcript are saved first.
+    """
+    from .serializers import CRMDraftSerializer
+    from .tasks import extract_crm_draft
+
+    draft = _get_draft_or_404(request, draft_id)
+    if not draft:
+        return Response({"error": "Not found"}, status=status.HTTP_404_NOT_FOUND)
+
+    if draft.status not in ("transcribed", "failed", "pending"):
+        return Response(
+            {"error": f"Cannot start extraction from status '{draft.status}'."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    # Allow the user to update the transcript before extraction
+    new_text = request.data.get("raw_text")
+    if new_text is not None:
+        draft.raw_text = new_text
+        draft.save(update_fields=["raw_text", "updated_at"])
+
+    if not (draft.raw_text or "").strip():
+        return Response(
+            {"error": "Transcript is empty. Add text or re-upload the audio."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    extract_crm_draft.delay(str(draft.id))
+    draft.refresh_from_db()
     return Response(CRMDraftSerializer(draft).data)
 
 

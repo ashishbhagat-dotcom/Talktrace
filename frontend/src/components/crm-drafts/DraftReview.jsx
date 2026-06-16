@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { CheckCircle2, ChevronLeft, Loader2, Sparkles, AlertCircle, ExternalLink } from "lucide-react";
 import toast from "react-hot-toast";
-import { getCrmDraft, updateCrmDraft, submitCrmDraft } from "../../api/integrations";
+import { getCrmDraft, updateCrmDraft, submitCrmDraft, extractCrmDraft } from "../../api/integrations";
 import Select from "../ui/Select";
 
 export default function DraftReview({ draftId, onBack, onDone }) {
@@ -16,7 +16,7 @@ export default function DraftReview({ draftId, onBack, onDone }) {
     queryFn: () => getCrmDraft(draftId).then((r) => r.data),
     refetchInterval: (q) => {
       const s = q.state.data?.status;
-      return s === "pending" || s === "extracting" ? 2000 : false;
+      return s === "pending" || s === "transcribing" || s === "extracting" ? 2000 : false;
     },
   });
 
@@ -97,7 +97,15 @@ export default function DraftReview({ draftId, onBack, onDone }) {
     return <SuccessScreen draft={submitted} onDone={onDone} />;
   }
 
-  if (draft.status === "pending" || draft.status === "extracting") {
+  if (draft.status === "pending" || draft.status === "transcribing") {
+    return <TranscribingScreen />;
+  }
+
+  if (draft.status === "transcribed") {
+    return <TranscriptReview draft={draft} onBack={onBack} />;
+  }
+
+  if (draft.status === "extracting") {
     return <ExtractingScreen draft={draft} />;
   }
 
@@ -134,6 +142,89 @@ export default function DraftReview({ draftId, onBack, onDone }) {
   );
 }
 
+function TranscribingScreen() {
+  return (
+    <div className="max-w-3xl mx-auto">
+      <div className="card p-8 text-center">
+        <Loader2 size={28} className="text-brand-500 mx-auto mb-3 animate-spin" />
+        <h3 className="font-semibold text-slate-800">Transcribing audio…</h3>
+        <p className="text-sm text-slate-500 mt-1">
+          Converting speech to text. This usually takes 20–60 seconds depending on the audio length.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function TranscriptReview({ draft, onBack }) {
+  const [transcript, setTranscript] = useState(draft.raw_text || "");
+  const queryClient = useQueryClient();
+
+  const extractMutation = useMutation({
+    mutationFn: () => extractCrmDraft(draft.id, transcript),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["crm-draft", draft.id] });
+    },
+    onError: (err) => {
+      toast.error(err.response?.data?.error || "Couldn't start analysis");
+    },
+  });
+
+  const wordCount = transcript.trim().split(/\s+/).filter(Boolean).length;
+
+  return (
+    <div className="max-w-3xl mx-auto space-y-4">
+      <button onClick={onBack} className="text-sm text-slate-500 hover:text-slate-800 flex items-center gap-1">
+        <ChevronLeft size={16} /> Back
+      </button>
+
+      <div>
+        <h1 className="text-2xl font-bold text-slate-800">Review transcript</h1>
+        <p className="text-slate-500 mt-1 text-sm">
+          AI transcribed your audio. Make any corrections, then run analysis to extract CRM fields.
+        </p>
+      </div>
+
+      <div className="card p-5 space-y-3">
+        <div className="flex items-baseline justify-between">
+          <label className="label mb-0">Transcript</label>
+          <span className="text-xs text-slate-400">{wordCount} words · {transcript.length} chars</span>
+        </div>
+        <textarea
+          value={transcript}
+          onChange={(e) => setTranscript(e.target.value)}
+          rows={14}
+          className="input font-mono text-sm leading-relaxed"
+          placeholder="Empty transcript — Whisper couldn't extract any text from the audio."
+        />
+        <p className="text-xs text-slate-500">
+          Tip: fix any misheard names, emails, or numbers before analysis. Better transcript → better AI extraction.
+        </p>
+
+        <div className="flex justify-between items-center pt-2 border-t border-slate-100">
+          <span className="text-xs text-slate-400">
+            {transcript.trim().length === 0
+              ? "Add some text to enable analysis"
+              : "Ready to extract CRM fields"}
+          </span>
+          <button
+            onClick={() => extractMutation.mutate()}
+            disabled={extractMutation.isPending || transcript.trim().length === 0}
+            className="btn-primary flex items-center gap-2"
+          >
+            {extractMutation.isPending ? (
+              <Loader2 size={15} className="animate-spin" />
+            ) : (
+              <Sparkles size={15} />
+            )}
+            Analyze with AI
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ExtractingScreen({ draft }) {
   return (
     <div className="max-w-3xl mx-auto">
@@ -141,7 +232,7 @@ function ExtractingScreen({ draft }) {
         <Sparkles size={28} className="text-brand-500 mx-auto mb-3 animate-pulse" />
         <h3 className="font-semibold text-slate-800">Analyzing conversation…</h3>
         <p className="text-sm text-slate-500 mt-1">
-          {draft.attachment ? "Transcribing audio then extracting CRM fields." : "Extracting CRM fields with AI."}
+          Extracting CRM fields with AI.
         </p>
         <Loader2 size={18} className="animate-spin text-slate-400 mx-auto mt-4" />
       </div>

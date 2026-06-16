@@ -79,4 +79,4 @@ class ConversationDetailSerializer(serializers.ModelSerializer):
 class ConversationStatusSerializer(serializers.ModelSerializer):
     class Meta:
         model = Conversation
-        fields = ["id", "ai_status", "updated_at"]
+        fields = ["id", "ai_status", "raw_text", "updated_at"]

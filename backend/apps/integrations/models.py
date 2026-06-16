@@ -79,6 +79,8 @@ class CRMDraft(models.Model):
 
     class Status(models.TextChoices):
         PENDING = "pending", "Pending"
+        TRANSCRIBING = "transcribing", "Transcribing audio"
+        TRANSCRIBED = "transcribed", "Transcript ready for review"
         EXTRACTING = "extracting", "Extracting"
         READY = "ready", "Ready for Review"
         SUBMITTED = "submitted", "Submitted"

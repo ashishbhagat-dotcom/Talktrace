@@ -23,6 +23,8 @@ class Conversation(models.Model):
 
     class AIStatus(models.TextChoices):
         PENDING = "pending", "Pending"
+        TRANSCRIBING = "transcribing", "Transcribing audio"
+        TRANSCRIBED = "transcribed", "Transcript ready for review"
         PROCESSING = "processing", "Processing"
         COMPLETED = "completed", "Completed"
         FAILED = "failed", "Failed"
