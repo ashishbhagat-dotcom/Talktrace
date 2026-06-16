@@ -62,10 +62,12 @@ def extract_with_llm(self, conversation_id: str):
             competitor_mentions=result["competitor_mentions"],
         )
 
-        # Create ActionItems from extracted data
+        # Create ActionItems from extracted data. Do NOT push them to Zoho yet —
+        # the user will review (and possibly edit/delete/add) on the AI insights
+        # review screen, and the confirm view will push the final set.
         action_items = result.get("action_items", [])
         if action_items:
-            created_items = ActionItem.objects.bulk_create([
+            ActionItem.objects.bulk_create([
                 ActionItem(
                     conversation_id=conversation_id,
                     description=item["description"],
@@ -75,9 +77,6 @@ def extract_with_llm(self, conversation_id: str):
                 for item in action_items
                 if item.get("description")
             ])
-            from apps.integrations.tasks import push_action_item_to_zoho
-            for item in created_items:
-                push_action_item_to_zoho.delay(str(item.id))
 
         logger.info(f"LLM extraction complete for conversation {conversation_id}")
     except Exception as exc:

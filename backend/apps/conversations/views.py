@@ -135,13 +135,18 @@ class ConversationViewSet(viewsets.ModelViewSet):
             # Delete action items the user removed
             ActionItem.objects.filter(conversation=conversation).exclude(id__in=keep_ids).delete()
 
-        # Mark completed and queue Zoho push
+        # Mark completed and queue Zoho push (note + a Task per action item)
         conversation.ai_status = Conversation.AIStatus.COMPLETED
         conversation.save(update_fields=["ai_status", "updated_at"])
 
+        from apps.integrations.tasks import push_action_item_to_zoho, push_conversation_to_zoho
         if conversation.created_by_id:
-            from apps.integrations.tasks import push_conversation_to_zoho
             push_conversation_to_zoho.delay(str(conversation.id), str(conversation.created_by_id))
+
+        # Push the final action items set (after the user's edits) as Zoho Tasks
+        from .models import ActionItem
+        for item_id in ActionItem.objects.filter(conversation=conversation).values_list("id", flat=True):
+            push_action_item_to_zoho.delay(str(item_id))
 
         return Response(ConversationDetailSerializer(conversation, context={"request": request}).data)
 
