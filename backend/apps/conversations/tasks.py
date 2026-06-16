@@ -14,7 +14,10 @@ def transcribe_audio(self, conversation_id: str, attachment_id: str):
         attachment = Attachment.objects.select_related("conversation").get(id=attachment_id)
         conversation = attachment.conversation
 
-        Conversation.objects.filter(id=conversation_id).update(ai_status="processing")
+        # Use 'transcribing' so the UI shows only the Transcribing step active
+        # while Whisper is running. 'processing' is reserved for the LLM
+        # extraction phase that comes after the user reviews the transcript.
+        Conversation.objects.filter(id=conversation_id).update(ai_status="transcribing")
 
         transcript = transcribe_attachment(attachment)
         attachment.transcription = transcript
