@@ -23,3 +23,6 @@ export const uploadVoice = (formData, onUploadProgress) =>
 
 export const analyzeConversation = (id, rawText) =>
   client.post(`/conversations/${id}/analyze/`, rawText != null ? { raw_text: rawText } : {});
+
+export const confirmConversation = (id, edits) =>
+  client.post(`/conversations/${id}/confirm/`, edits || {});

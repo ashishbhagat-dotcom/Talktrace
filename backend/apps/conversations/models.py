@@ -26,6 +26,7 @@ class Conversation(models.Model):
         TRANSCRIBING = "transcribing", "Transcribing audio"
         TRANSCRIBED = "transcribed", "Transcript ready for review"
         PROCESSING = "processing", "Processing"
+        READY_FOR_REVIEW = "ready_for_review", "Ready for review"
         COMPLETED = "completed", "Completed"
         FAILED = "failed", "Failed"
 

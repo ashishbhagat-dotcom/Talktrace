@@ -68,6 +68,83 @@ class ConversationViewSet(viewsets.ModelViewSet):
         conversation = self.get_object()
         return Response(ConversationStatusSerializer(conversation).data)
 
+    @action(detail=True, methods=["post"], url_path="confirm")
+    def confirm(self, request, pk=None):
+        """Apply final user edits to the AI fields and push to Zoho.
+
+        Body (all optional): ai_summary, customer_requirements, pain_points,
+        pricing_discussion, next_steps, sentiment, topics (list),
+        competitor_mentions (list), action_items (list of
+        {id?, description, due_date?, priority?, status?}).
+        """
+        conversation = self.get_object()
+
+        if conversation.ai_status not in (
+            Conversation.AIStatus.READY_FOR_REVIEW,
+            Conversation.AIStatus.FAILED,
+            Conversation.AIStatus.COMPLETED,
+        ):
+            return Response(
+                {"error": f"Cannot confirm from status '{conversation.ai_status}'."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        editable_text_fields = [
+            "ai_summary", "customer_requirements", "pain_points",
+            "pricing_discussion", "next_steps", "sentiment",
+        ]
+        updates = {}
+        for f in editable_text_fields:
+            if f in request.data:
+                updates[f] = request.data.get(f) or ""
+
+        for f in ("topics", "competitor_mentions"):
+            if f in request.data:
+                val = request.data.get(f) or []
+                if isinstance(val, list):
+                    updates[f] = val
+
+        if updates:
+            for k, v in updates.items():
+                setattr(conversation, k, v)
+            conversation.save(update_fields=[*updates.keys(), "updated_at"])
+
+        # Sync action item edits (upsert/delete)
+        if "action_items" in request.data:
+            from .models import ActionItem
+            incoming = request.data.get("action_items") or []
+            incoming = [a for a in incoming if isinstance(a, dict)]
+            keep_ids = set()
+            for item in incoming:
+                desc = (item.get("description") or "").strip()
+                if not desc:
+                    continue
+                payload = {
+                    "description": desc[:500],
+                    "due_date": item.get("due_date") or None,
+                    "priority": item.get("priority", "medium"),
+                    "status": item.get("status", "pending"),
+                }
+                if item.get("id"):
+                    obj, _ = ActionItem.objects.update_or_create(
+                        id=item["id"], conversation=conversation, defaults=payload,
+                    )
+                else:
+                    obj = ActionItem.objects.create(conversation=conversation, **payload)
+                keep_ids.add(str(obj.id))
+            # Delete action items the user removed
+            ActionItem.objects.filter(conversation=conversation).exclude(id__in=keep_ids).delete()
+
+        # Mark completed and queue Zoho push
+        conversation.ai_status = Conversation.AIStatus.COMPLETED
+        conversation.save(update_fields=["ai_status", "updated_at"])
+
+        if conversation.created_by_id:
+            from apps.integrations.tasks import push_conversation_to_zoho
+            push_conversation_to_zoho.delay(str(conversation.id), str(conversation.created_by_id))
+
+        return Response(ConversationDetailSerializer(conversation, context={"request": request}).data)
+
     @action(detail=True, methods=["post"], url_path="analyze")
     def analyze(self, request, pk=None):
         """Kick off the extraction pipeline. Used after the user reviews the

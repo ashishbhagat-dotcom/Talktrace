@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { ChevronDown, ChevronRight, CheckCircle, Clock, AlertCircle, Sparkles, Loader2 } from "lucide-react";
-import { getConversation, analyzeConversation } from "../api/conversations";
+import { getConversation, analyzeConversation, confirmConversation } from "../api/conversations";
 import { updateActionItem } from "../api/actionItems";
 import SentimentBadge from "../components/conversations/SentimentBadge";
 import AIProcessingStatus from "../components/conversations/AIProcessingStatus";
@@ -48,8 +48,12 @@ export default function ConversationView() {
   const { data: conversation, isLoading } = useQuery({
     queryKey: ["conversation", id],
     queryFn: () => getConversation(id).then((r) => r.data),
-    refetchInterval: (query) =>
-      query.state.data?.ai_status !== "completed" ? 3000 : false,
+    refetchInterval: (query) => {
+      const s = query.state.data?.ai_status;
+      // Poll while the AI pipeline is actively working. Stop polling when
+      // waiting on the user (transcribed / ready_for_review) or done.
+      return s === "pending" || s === "transcribing" || s === "processing" ? 3000 : false;
+    },
   });
 
   const updateStatus = useMutation({
@@ -74,6 +78,7 @@ export default function ConversationView() {
 
   const aiDone = conversation.ai_status === "completed";
   const transcriptReviewMode = conversation.ai_status === "transcribed";
+  const aiReviewMode = conversation.ai_status === "ready_for_review";
 
   return (
     <div className="max-w-6xl mx-auto space-y-6">
@@ -101,16 +106,21 @@ export default function ConversationView() {
         <TranscriptReview conversation={conversation} />
       )}
 
-      {/* AI Processing spinner — shown during transcription or extraction */}
-      {!transcriptReviewMode && conversation.ai_status !== "completed" && (
+      {/* AI insights review (after extraction, before push to CRM) */}
+      {aiReviewMode && (
+        <AIInsightsReview conversation={conversation} />
+      )}
+
+      {/* AI Processing spinner — shown only while AI is actively working */}
+      {!transcriptReviewMode && !aiReviewMode && !aiDone && conversation.ai_status !== "failed" && (
         <AIProcessingStatus
           conversationId={id}
           hasAudio={conversation.attachments?.length > 0}
         />
       )}
 
-      {/* Main content grid — hidden during transcript review */}
-      {!transcriptReviewMode && (
+      {/* Main content grid — hidden during transcript / AI review */}
+      {!transcriptReviewMode && !aiReviewMode && (
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Left: Raw text */}
         <div className="card p-6">
@@ -182,7 +192,7 @@ export default function ConversationView() {
       )}
 
       {/* Action Items */}
-      {!transcriptReviewMode && conversation.action_items?.length > 0 && (
+      {!transcriptReviewMode && !aiReviewMode && conversation.action_items?.length > 0 && (
         <div className="card">
           <div className="px-6 py-4 border-b border-slate-100">
             <h2 className="font-semibold text-slate-800">
@@ -290,6 +300,246 @@ function TranscriptReview({ conversation }) {
           Analyze with AI
         </button>
       </div>
+    </div>
+  );
+}
+
+const SENTIMENT_OPTIONS = [
+  { value: "very_negative", label: "Very Negative" },
+  { value: "negative", label: "Negative" },
+  { value: "neutral", label: "Neutral" },
+  { value: "positive", label: "Positive" },
+  { value: "very_positive", label: "Very Positive" },
+];
+
+const PRIORITY_OPTIONS = [
+  { value: "low", label: "Low" },
+  { value: "medium", label: "Medium" },
+  { value: "high", label: "High" },
+];
+
+function AIInsightsReview({ conversation }) {
+  const queryClient = useQueryClient();
+  const [edits, setEdits] = useState({
+    ai_summary: conversation.ai_summary || "",
+    customer_requirements: conversation.customer_requirements || "",
+    pain_points: conversation.pain_points || "",
+    pricing_discussion: conversation.pricing_discussion || "",
+    next_steps: conversation.next_steps || "",
+    sentiment: conversation.sentiment || "neutral",
+    topics: conversation.topics || [],
+    competitor_mentions: conversation.competitor_mentions || [],
+  });
+  const [actionItems, setActionItems] = useState(
+    (conversation.action_items || []).map((a) => ({
+      id: a.id,
+      description: a.description || "",
+      due_date: a.due_date || "",
+      priority: a.priority || "medium",
+      status: a.status || "pending",
+    }))
+  );
+
+  // Re-hydrate if the underlying conversation refreshes
+  useEffect(() => {
+    setEdits({
+      ai_summary: conversation.ai_summary || "",
+      customer_requirements: conversation.customer_requirements || "",
+      pain_points: conversation.pain_points || "",
+      pricing_discussion: conversation.pricing_discussion || "",
+      next_steps: conversation.next_steps || "",
+      sentiment: conversation.sentiment || "neutral",
+      topics: conversation.topics || [],
+      competitor_mentions: conversation.competitor_mentions || [],
+    });
+    setActionItems(
+      (conversation.action_items || []).map((a) => ({
+        id: a.id,
+        description: a.description || "",
+        due_date: a.due_date || "",
+        priority: a.priority || "medium",
+        status: a.status || "pending",
+      }))
+    );
+  }, [conversation.id]);
+
+  const setField = (k, v) => setEdits((e) => ({ ...e, [k]: v }));
+
+  const updateItem = (idx, patch) =>
+    setActionItems((items) => items.map((it, i) => (i === idx ? { ...it, ...patch } : it)));
+  const removeItem = (idx) =>
+    setActionItems((items) => items.filter((_, i) => i !== idx));
+  const addItem = () =>
+    setActionItems((items) => [...items, { description: "", due_date: "", priority: "medium", status: "pending" }]);
+
+  const confirmMutation = useMutation({
+    mutationFn: () =>
+      confirmConversation(conversation.id, {
+        ...edits,
+        action_items: actionItems
+          .filter((a) => a.description.trim())
+          .map((a) => ({
+            id: a.id,
+            description: a.description,
+            due_date: a.due_date || null,
+            priority: a.priority,
+            status: a.status,
+          })),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["conversation", conversation.id] });
+      toast.success("Pushed to Zoho CRM!");
+    },
+    onError: (err) => {
+      toast.error(err.response?.data?.error || "Couldn't confirm");
+    },
+  });
+
+  return (
+    <div className="card p-6 space-y-5">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h2 className="font-semibold text-slate-800 flex items-center gap-2">
+            <Sparkles size={16} className="text-brand-500" /> Review AI insights
+          </h2>
+          <p className="text-sm text-slate-500 mt-0.5">
+            Edit anything the AI got wrong. Nothing is pushed to Zoho until you confirm.
+          </p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="space-y-4">
+          <ReviewField label="AI Summary" rows={4} value={edits.ai_summary}
+            onChange={(v) => setField("ai_summary", v)} />
+          <ReviewField label="Customer Requirements" rows={3} value={edits.customer_requirements}
+            onChange={(v) => setField("customer_requirements", v)} />
+          <ReviewField label="Pain Points" rows={3} value={edits.pain_points}
+            onChange={(v) => setField("pain_points", v)} />
+        </div>
+        <div className="space-y-4">
+          <ReviewField label="Pricing Discussion" rows={3} value={edits.pricing_discussion}
+            onChange={(v) => setField("pricing_discussion", v)} />
+          <ReviewField label="Next Steps" rows={3} value={edits.next_steps}
+            onChange={(v) => setField("next_steps", v)} />
+          <div>
+            <label className="label">Sentiment</label>
+            <Select
+              value={edits.sentiment}
+              onChange={(v) => setField("sentiment", v || "neutral")}
+              options={SENTIMENT_OPTIONS}
+            />
+          </div>
+          <div>
+            <label className="label">Topics</label>
+            <TagInput value={edits.topics} onChange={(v) => setField("topics", v)} placeholder="Add topic and press Enter" />
+          </div>
+          <div>
+            <label className="label">Competitors Mentioned</label>
+            <TagInput value={edits.competitor_mentions} onChange={(v) => setField("competitor_mentions", v)} placeholder="Add competitor and press Enter" />
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <div className="flex items-center justify-between mb-2">
+          <label className="label mb-0">Action Items</label>
+          <button onClick={addItem} className="text-xs text-brand-600 hover:text-brand-700 font-medium">
+            + Add action item
+          </button>
+        </div>
+        <div className="space-y-2">
+          {actionItems.length === 0 && (
+            <p className="text-xs text-slate-400">No action items extracted.</p>
+          )}
+          {actionItems.map((item, idx) => (
+            <div key={item.id || `new-${idx}`} className="flex flex-col md:flex-row gap-2 p-3 border border-slate-200 rounded-lg bg-slate-50">
+              <input
+                type="text"
+                value={item.description}
+                onChange={(e) => updateItem(idx, { description: e.target.value })}
+                placeholder="Describe the action..."
+                className="input flex-1 bg-white"
+              />
+              <input
+                type="date"
+                value={item.due_date || ""}
+                onChange={(e) => updateItem(idx, { due_date: e.target.value })}
+                className="input md:w-40 bg-white"
+              />
+              <div className="md:w-32">
+                <Select size="sm"
+                  value={item.priority}
+                  onChange={(v) => updateItem(idx, { priority: v })}
+                  options={PRIORITY_OPTIONS}
+                />
+              </div>
+              <button
+                onClick={() => removeItem(idx)}
+                className="text-slate-400 hover:text-red-600 px-2 self-center"
+                title="Remove"
+              >
+                ×
+              </button>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
+        <button
+          onClick={() => confirmMutation.mutate()}
+          disabled={confirmMutation.isPending}
+          className="btn-primary flex items-center gap-2"
+        >
+          {confirmMutation.isPending && <Loader2 size={15} className="animate-spin" />}
+          Confirm & Push to CRM
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function ReviewField({ label, rows, value, onChange }) {
+  return (
+    <div>
+      <label className="label">{label}</label>
+      <textarea
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        rows={rows}
+        className="input text-sm leading-relaxed"
+      />
+    </div>
+  );
+}
+
+function TagInput({ value, onChange, placeholder }) {
+  const [draft, setDraft] = useState("");
+  const add = () => {
+    const t = draft.trim();
+    if (t && !value.includes(t)) onChange([...value, t]);
+    setDraft("");
+  };
+  const remove = (t) => onChange(value.filter((v) => v !== t));
+  return (
+    <div className="flex flex-wrap items-center gap-1.5 input min-h-[42px] py-1.5">
+      {value.map((t) => (
+        <span key={t} className="badge bg-blue-100 text-blue-700 flex items-center gap-1">
+          {t}
+          <button onClick={() => remove(t)} className="hover:text-red-600">×</button>
+        </span>
+      ))}
+      <input
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === ",") { e.preventDefault(); add(); }
+        }}
+        onBlur={add}
+        placeholder={value.length === 0 ? placeholder : ""}
+        className="flex-1 min-w-[100px] outline-none text-sm bg-transparent"
+      />
     </div>
   );
 }

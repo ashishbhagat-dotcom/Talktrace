@@ -126,15 +126,13 @@ def mark_pipeline_failed(request, exc, traceback, conversation_id: str):
 
 @shared_task(bind=True, name="conversations.complete_pipeline")
 def complete_pipeline(self, conversation_id: str):
+    """Mark AI extraction done. The conversation now waits for the user to
+    review AI-generated fields before pushing anything to Zoho. The user
+    confirms (and optionally edits) via POST /conversations/<id>/confirm/.
+    """
     from .models import Conversation
-    conversation = Conversation.objects.select_related("created_by").get(id=conversation_id)
-    Conversation.objects.filter(id=conversation_id).update(ai_status="completed")
-    logger.info(f"AI pipeline completed for conversation {conversation_id}")
-
-    # Push summary to Zoho if creator is connected
-    if conversation.created_by_id:
-        from apps.integrations.tasks import push_conversation_to_zoho
-        push_conversation_to_zoho.delay(conversation_id, str(conversation.created_by_id))
+    Conversation.objects.filter(id=conversation_id).update(ai_status="ready_for_review")
+    logger.info(f"AI pipeline ready for review on conversation {conversation_id}")
 
 
 @shared_task(bind=True, name="conversations.mark_transcribed")
