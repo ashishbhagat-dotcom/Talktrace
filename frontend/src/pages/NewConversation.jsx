@@ -121,7 +121,9 @@ export default function NewConversation() {
       } else if (activeTab === "voice" || activeTab === "upload") {
         const formData = new FormData();
         if (activeTab === "voice") {
-          const ext = audioMime?.includes("webm") ? "webm" : "ogg";
+          // RecordRTC produces WAV. Pick a file extension that matches the
+          // actual byte content so server-side mime detection + Whisper agree.
+          const ext = audioMime?.includes("webm") ? "webm" : "wav";
           formData.append("audio", audioBlob, `recording.${ext}`);
         } else {
           formData.append("audio", uploadFile, uploadFile.name);
